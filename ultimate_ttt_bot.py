@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.10"
+__version__ = "1.5.11"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
