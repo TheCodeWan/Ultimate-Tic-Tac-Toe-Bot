@@ -117,9 +117,9 @@ python3 ultimate_ttt_bot.py --time 10
 
 | Option | Meaning |
 |--------|---------|
-| `--time 10` | Bot thinks up to 10 seconds per move |
-| `--win-sims 1000` | Faster (less precise) win-chance estimates |
-| `--seed 42` | Same “randomness” every run (for testing) |
+| `--time` | Bot thinks up to 10 seconds per move |
+| `--win-sims` | Faster (less precise) win-chance estimates |
+| `--seed` | Same “randomness” every run (for testing) |
 | `--no-update-check` | Don’t check for updates when starting |
 | `--version` | Print version number |
 
@@ -141,7 +141,7 @@ cd Ultimate-Tic-Tac-Toe-Bot
 git pull
 ```
 
-**Note:** Auto-update only works for a **git clone** of this repo (with access if the repo is private). A one-off downloaded zip won’t auto-update until you switch to git.
+**Note:** Auto-update only works for a **git clone** of this repo. A one-off downloaded zip won’t auto-update until you switch to git.
 
 **Ctrl+U note:** In many terminals Ctrl+U normally clears the line. This program tries to reuse it for “update,” but if that doesn’t work on your machine, just type `update` and press Enter.
 
