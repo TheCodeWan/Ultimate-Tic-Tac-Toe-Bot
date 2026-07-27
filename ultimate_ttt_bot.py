@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.2"
+__version__ = "1.5.3"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1141,6 +1141,30 @@ def emit(*args, file=None, style: Optional[str] = None, **kwargs) -> None:
     print(file=file, flush=True)
 
 
+def emit_title(title: str, subtitle: str = "", file=None) -> None:
+    """
+    Print a larger-looking title line, then a blank line.
+
+    Uses VT100 double-height characters (supported by many terminals including
+    macOS Terminal and iTerm2). Falls back to bold bright text if needed.
+    """
+    if file is None:
+        file = sys.stderr
+    # Bold bright cyan; double-height top half (#3) + bottom half (#4)
+    # Plain text only in the double-height lines (no Rich markup).
+    main = title if not subtitle else f"{title}  {subtitle}"
+    # \033#3 = double-height top, \033#4 = double-height bottom
+    top = f"\033[1;96m\033#3{main}\033[0m\n"
+    bot = f"\033[1;96m\033#4{main}\033[0m\n"
+    try:
+        file.write(top)
+        file.write(bot)
+        file.write("\n")
+        file.flush()
+    except Exception:
+        emit(f"[bold bright_cyan]{main}[/]", file=file)
+
+
 def _read_player_line_unix() -> str:
     """
     Read one line of input in near-raw terminal mode (macOS / Linux).
@@ -1623,11 +1647,11 @@ def play_loop(
     # Snapshots before each of your turns (for Ctrl+B undo of your move + bot reply)
     checkpoints: List[Tuple[State, List[Dict[str, float]]]] = []
 
-    # Leading blank line, then title
+    # Leading blank line, then larger title
     print(file=sys.stderr)
-    emit(
-        f"[bold cyan]Ultimate Tic-Tac-Toe Bot[/] v{__version__}  "
-        f"([bold]you = X[/], bot = O)",
+    emit_title(
+        "Ultimate Tic-Tac-Toe Bot",
+        subtitle=f"v{__version__}  (you = X, bot = O)",
         file=sys.stderr,
     )
     emit(
