@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1165,6 +1165,28 @@ def emit_title(title: str, subtitle: str = "", file=None) -> None:
         emit(f"[bold bright_cyan]{main}[/]", file=file)
 
 
+# ANSI helpers for move lines (raw mode / double-width)
+_ANSI_RESET = "\033[0m"
+_ANSI_GOLD = "\033[1;38;2;255;193;7m"  # bold golden yellow
+_ANSI_ORANGE = "\033[1;38;2;255;140;0m"  # bold orange
+_ANSI_DOUBLE_WIDTH = "\033#6"  # whole line slightly larger (double-width)
+
+
+def emit_move_line(label: str, move: str, *, color: str, file=None) -> None:
+    """
+    Print a move line a bit larger than body text (VT100 double-width), then blank.
+    """
+    if file is None:
+        file = sys.stdout
+    text = f"{label} {move}"
+    try:
+        file.write(f"{_ANSI_DOUBLE_WIDTH}{color}{text}{_ANSI_RESET}\n\n")
+        file.flush()
+    except Exception:
+        style = "bold yellow" if color == _ANSI_GOLD else "bold orange1"
+        emit(f"[{style}]{text}[/]", file=file)
+
+
 def _read_player_line_unix() -> str:
     """
     Read one line of input in near-raw terminal mode (macOS / Linux).
@@ -1194,11 +1216,9 @@ def _read_player_line_unix() -> str:
         # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-        # Bold golden-yellow prompt + typed text (ANSI; works in raw mode)
-        # Truecolor gold ≈ #FFC107; falls back fine on most modern terminals
-        GOLD = "\033[1;38;2;255;193;7m"
-        RESET = "\033[0m"
-        sys.stdout.write(f"{GOLD}X move: ")
+        # Double-width line + bold gold (slightly larger than body text)
+        GOLD, RESET = _ANSI_GOLD, _ANSI_RESET
+        sys.stdout.write(f"{_ANSI_DOUBLE_WIDTH}{GOLD}X move: ")
         sys.stdout.flush()
 
         while True:
@@ -1239,11 +1259,11 @@ def _read_player_line_unix() -> str:
                 sys.stdout.flush()
                 return "".join(buf)
 
-            # Backspace / Delete
+            # Backspace / Delete (double-width: clear two columns per char)
             if code in (0x7F, 0x08):
                 if buf:
                     buf.pop()
-                    sys.stdout.write("\b \b")
+                    sys.stdout.write("\b\b  \b\b")
                     sys.stdout.flush()
                 continue
 
@@ -1251,7 +1271,7 @@ def _read_player_line_unix() -> str:
             if code < 32:
                 continue
 
-            # Printable (stay bold gold)
+            # Printable (stay bold gold on double-width line)
             buf.append(ch)
             sys.stdout.write(ch)
             sys.stdout.flush()
@@ -1266,8 +1286,9 @@ def _read_player_line_windows() -> str:
     import msvcrt  # type: ignore
 
     buf: List[str] = []
-    GOLD, RESET = "\033[1;38;2;255;193;7m", "\033[0m"
-    sys.stdout.write(f"{GOLD}X move: ")
+    GOLD, RESET = _ANSI_GOLD, _ANSI_RESET
+    # Double-width where the console supports it
+    sys.stdout.write(f"{_ANSI_DOUBLE_WIDTH}{GOLD}X move: ")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
@@ -1299,7 +1320,7 @@ def _read_player_line_windows() -> str:
         if code in (0x08, 0x7F):
             if buf:
                 buf.pop()
-                sys.stdout.write("\b \b")
+                sys.stdout.write("\b\b  \b\b")
                 sys.stdout.flush()
             continue
         if code < 32:
@@ -1785,7 +1806,7 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"[bold orange1]O move:[/] {format_move(bot_b, bot_c)}")
+            emit_move_line("O move:", format_move(bot_b, bot_c), color=_ANSI_ORANGE)
 
             if state.is_terminal():
                 g = state.global_winner()
@@ -1822,7 +1843,7 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"[bold orange1]O move:[/] {format_move(bot_b, bot_c)}")
+            emit_move_line("O move:", format_move(bot_b, bot_c), color=_ANSI_ORANGE)
 
 
 def _announce_end(state: State) -> None:
