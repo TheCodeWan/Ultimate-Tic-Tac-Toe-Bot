@@ -115,7 +115,7 @@ After **your** move:
 
 After the **bot** moves:
 
-- **`O move: 5-3`** (example; color `#FD6C00`)  
+- **`O move: 5-3`** — label in `#FD6C00`, move text in white  
 - **Win chance** — rough odds you’ll still win (plus draw / bot win). Values under 0.1% show as `<0.1%`.  
 
 At the prompt, **`X move:`** is bold gold; the **text you type** is plain white.

@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.5"
+__version__ = "1.5.6"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1173,16 +1173,27 @@ _ANSI_WHITE = "\033[38;2;255;255;255m"  # plain white for typed characters
 _ANSI_ORANGE = "\033[38;2;253;108;0m"  # #FD6C00 for O move
 
 
-def emit_move_line(label: str, move: str, *, color: str, file=None) -> None:
-    """Print a move line in color (normal proportions), then a blank line."""
+def emit_move_line(
+    label: str,
+    move: str,
+    *,
+    label_color: str,
+    move_color: str = _ANSI_WHITE,
+    file=None,
+) -> None:
+    """
+    Print a move line: colored prompt/label, then move text (default white).
+    Normal proportions; blank line after.
+    """
     if file is None:
         file = sys.stdout
-    text = f"{label} {move}"
     try:
-        file.write(f"{color}{text}{_ANSI_RESET}\n\n")
+        file.write(
+            f"{label_color}{label} {_ANSI_RESET}{move_color}{move}{_ANSI_RESET}\n\n"
+        )
         file.flush()
     except Exception:
-        emit(f"[bold #FD6C00]{text}[/]", file=file)
+        emit(f"[bold #FD6C00]{label}[/] [white]{move}[/]", file=file)
 
 
 def _read_player_line_unix() -> str:
@@ -1803,7 +1814,12 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit_move_line("O move:", format_move(bot_b, bot_c), color=_ANSI_ORANGE)
+            emit_move_line(
+                "O move:",
+                format_move(bot_b, bot_c),
+                label_color=_ANSI_ORANGE,
+                move_color=_ANSI_WHITE,
+            )
 
             if state.is_terminal():
                 g = state.global_winner()
@@ -1815,7 +1831,7 @@ def play_loop(
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
                     emit(
-                        f"Estimated win chance: [bold orange1]{format_pct(p_win)}[/]  (O won)"
+                        f"Estimated win chance: [bold #FD6C00]{format_pct(p_win)}[/]  (O won)"
                     )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
@@ -1840,7 +1856,12 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit_move_line("O move:", format_move(bot_b, bot_c), color=_ANSI_ORANGE)
+            emit_move_line(
+                "O move:",
+                format_move(bot_b, bot_c),
+                label_color=_ANSI_ORANGE,
+                move_color=_ANSI_WHITE,
+            )
 
 
 def _announce_end(state: State) -> None:
