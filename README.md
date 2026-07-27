@@ -127,23 +127,23 @@ python3 ultimate_ttt_bot.py --time 10
 
 ## Updates
 
-If you installed with **git clone**:
+You do **not** need a full git clone just to update the bot.
 
-1. Each launch **checks** for a newer version on GitHub.  
+1. Each launch **checks GitHub** for a newer version of `ultimate_ttt_bot.py`.  
 2. If one exists, the bot tells you.  
-3. Type **`update`** (or **`u`**, or try **Ctrl+U**) to download it.  
+3. Type **`update`** (or **`u`**, or try **Ctrl+U**) to download the new script over the old one.  
 4. **Quit and run the script again** so the new code loads.
 
-Or anytime in a terminal:
+That works for a single downloaded `.py` file **or** a full repo folder (needs internet).
+
+If you use git for the whole project:
 
 ```bash
 cd Ultimate-Tic-Tac-Toe-Bot
 git pull
 ```
 
-**Note:** Auto-update only works for a **git clone** of this repo. A one-off downloaded zip won’t auto-update until you switch to git.
-
-**Ctrl+U note:** In many terminals Ctrl+U normally clears the line. This program tries to reuse it for “update,” but if that doesn’t work on your machine, just type `update` and press Enter.
+**Ctrl+U note:** In many terminals Ctrl+U normally clears the line. This program tries to reuse it for “update,” but if that doesn’t work, just type `update` and press Enter.
 
 ---
 

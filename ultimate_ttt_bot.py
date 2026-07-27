@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -810,8 +810,174 @@ def format_move(board: int, cell: int) -> str:
     return f"{board + 1}-{cell + 1}"
 
 
+def _script_path() -> str:
+    return os.path.abspath(__file__)
+
+
 def _script_dir() -> str:
-    return os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(_script_path())
+
+
+def _raw_bot_url() -> str:
+    return (
+        f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/"
+        f"{GITHUB_BRANCH}/ultimate_ttt_bot.py"
+    )
+
+
+def _fetch_remote_bot_source_err(
+    timeout: float = 20.0,
+) -> Tuple[Optional[str], str]:
+    """Download latest ultimate_ttt_bot.py from GitHub. Returns (text, error)."""
+    url = _raw_bot_url()
+    errors: List[str] = []
+
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": f"ultimate-ttt-bot/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8"), ""
+    except Exception as exc:
+        errors.append(f"urllib: {exc}")
+
+    # curl often works when macOS Python is missing SSL certificates
+    try:
+        proc = subprocess.run(
+            ["curl", "-fsSL", "--max-time", str(int(timeout)), url],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+        )
+        if proc.returncode == 0 and proc.stdout and "__version__" in proc.stdout:
+            return proc.stdout, ""
+        errors.append(
+            f"curl: {(proc.stderr or '').strip() or f'exit {proc.returncode}'}"
+        )
+    except Exception as exc:
+        errors.append(f"curl: {exc}")
+
+    return None, "; ".join(errors)
+
+
+def _parse_version(source: str) -> Optional[str]:
+    m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
+    return m.group(1) if m else None
+
+
+def _version_key(v: str) -> Tuple[int, ...]:
+    parts: List[int] = []
+    for bit in re.split(r"[^\d]+", v):
+        if bit.isdigit():
+            parts.append(int(bit))
+    return tuple(parts) if parts else (0,)
+
+
+def check_for_updates(quiet: bool = False) -> Optional[bool]:
+    """
+    Compare local __version__ to the bot file on GitHub.
+
+    Does **not** require a git clone — only network access.
+    Returns True if update available, False if up to date, None if unknown.
+    """
+    remote_src, err = _fetch_remote_bot_source_err()
+    if remote_src is None:
+        if not quiet:
+            print(
+                f"Update check: could not reach GitHub ({err or 'unknown error'}).",
+                file=sys.stderr,
+            )
+        return None
+
+    remote_ver = _parse_version(remote_src)
+    if not remote_ver:
+        if not quiet:
+            print("Update check: could not read remote version.", file=sys.stderr)
+        return None
+
+    if _version_key(remote_ver) > _version_key(__version__):
+        print(
+            f"Update available: you have v{__version__}, latest is v{remote_ver}.",
+            file=sys.stderr,
+        )
+        print(
+            "Type  update  or  u  and press Enter to download "
+            "(or Ctrl+U if that shortcut works here).",
+            file=sys.stderr,
+        )
+        return True
+
+    if not quiet:
+        print(f"Up to date (v{__version__}).", file=sys.stderr)
+    return False
+
+
+def apply_update() -> bool:
+    """
+    Download the latest bot script from GitHub and replace this file.
+
+    Works for a single .py file — no git clone required.
+    If this directory is also a git clone, tries `git pull` afterward for README/etc.
+    Restart the program after a successful update.
+    """
+    print("Downloading latest bot from GitHub...", flush=True)
+    remote_src, err = _fetch_remote_bot_source_err(timeout=60.0)
+    if remote_src is None:
+        print(f"Update failed: could not download ({err or 'unknown error'}).", file=sys.stderr)
+        return False
+
+    remote_ver = _parse_version(remote_src) or "?"
+    path = _script_path()
+    tmp_path = path + ".new"
+    bak_path = path + ".bak"
+
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(remote_src)
+            if not remote_src.endswith("\n"):
+                f.write("\n")
+        # Keep a simple backup of the previous file
+        try:
+            if os.path.isfile(path):
+                with open(path, "rb") as src, open(bak_path, "wb") as dst:
+                    dst.write(src.read())
+        except Exception:
+            pass
+        os.replace(tmp_path, path)
+    except Exception as exc:
+        print(f"Update failed while saving file: {exc}", file=sys.stderr)
+        try:
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        return False
+
+    print(f"Updated bot script to v{remote_ver}:", flush=True)
+    print(f"  {path}", flush=True)
+
+    # Optional: if user has a full clone, refresh the rest of the repo too
+    if _is_git_checkout():
+        print("Also refreshing git repo files...", flush=True)
+        code, out, gerr = _run_git(
+            ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
+        )
+        if code == 0 and out:
+            print(out, flush=True)
+        elif code != 0:
+            print(
+                f"(git pull skipped/failed: {gerr or out or 'error'} — bot file is still updated.)",
+                file=sys.stderr,
+            )
+
+    print(
+        "Please quit and run the script again to use the new version.",
+        flush=True,
+    )
+    return True
 
 
 def _run_git(args: List[str], timeout: float = 15.0) -> Tuple[int, str, str]:
@@ -836,99 +1002,6 @@ def _run_git(args: List[str], timeout: float = 15.0) -> Tuple[int, str, str]:
 def _is_git_checkout() -> bool:
     code, out, _ = _run_git(["rev-parse", "--is-inside-work-tree"], timeout=5.0)
     return code == 0 and out == "true"
-
-
-def check_for_updates(quiet: bool = False) -> Optional[bool]:
-    """
-    Check whether origin/main is ahead of the local checkout.
-
-    Returns True if an update is available, False if up to date, None if unknown.
-    """
-    if not _is_git_checkout():
-        if not quiet:
-            print(
-                "Update check: not a git checkout "
-                f"(clone https://github.com/{GITHUB_OWNER}/{GITHUB_REPO} to enable).",
-                file=sys.stderr,
-            )
-        return None
-
-    code, _, err = _run_git(
-        ["fetch", "--quiet", "origin", GITHUB_BRANCH], timeout=20.0
-    )
-    if code != 0:
-        if not quiet:
-            print(
-                f"Update check: could not reach origin ({err or 'fetch failed'}).",
-                file=sys.stderr,
-            )
-        return None
-
-    code, local, _ = _run_git(["rev-parse", "HEAD"], timeout=5.0)
-    if code != 0 or not local:
-        return None
-    code, remote, _ = _run_git(
-        ["rev-parse", f"origin/{GITHUB_BRANCH}"], timeout=5.0
-    )
-    if code != 0 or not remote:
-        return None
-
-    if local == remote:
-        if not quiet:
-            print(f"Up to date (v{__version__}).", file=sys.stderr)
-        return False
-
-    # How many commits behind?
-    code, count, _ = _run_git(
-        ["rev-list", "--count", f"HEAD..origin/{GITHUB_BRANCH}"], timeout=5.0
-    )
-    behind = count if code == 0 and count else "?"
-    print(
-        f"Update available: local is {behind} commit(s) behind "
-        f"origin/{GITHUB_BRANCH}.",
-        file=sys.stderr,
-    )
-    print(
-        "Type  update  or  u  and press Enter to download "
-        "(or press Ctrl+U if your terminal supports that shortcut).",
-        file=sys.stderr,
-    )
-    return True
-
-
-def apply_update() -> bool:
-    """
-    Pull latest from origin. Returns True if files changed / pull succeeded.
-    Caller should restart the program after a successful update.
-    """
-    if not _is_git_checkout():
-        print(
-            "Cannot auto-update: this folder is not a git clone.\n"
-            f"  git clone https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}.git",
-            file=sys.stderr,
-        )
-        return False
-
-    print("Downloading update (git pull)...", flush=True)
-    code, out, err = _run_git(
-        ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
-    )
-    if code != 0:
-        print(f"Update failed: {err or out or 'git pull error'}", file=sys.stderr)
-        print(
-            "Tip: commit or stash local changes, or re-clone the repo.",
-            file=sys.stderr,
-        )
-        return False
-
-    if out:
-        print(out, flush=True)
-    print(
-        "Update installed. Please quit and run the script again "
-        f"(python3 ultimate_ttt_bot.py) to use the new version.",
-        flush=True,
-    )
-    return True
 
 
 def _setup_ctrl_u_shortcut() -> bool:
