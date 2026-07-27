@@ -8,6 +8,8 @@ Play **Ultimate Tic-Tac-Toe** in your terminal against a computer opponent.
 
 Works on **Mac, Windows, or Linux** in any normal terminal that has **Python** (and **git** if you want easy updates).
 
+You also need **matplotlib** (for the end-of-game chart). If it’s missing, the bot **stops and tells you exactly what to type** to install it.
+
 ---
 
 ## Quick start
@@ -20,6 +22,14 @@ python3 ultimate_ttt_bot.py
 ```
 
 On Windows, if `python3` doesn’t work, try `python` instead.
+
+If you forget matplotlib, you’ll see something like:
+
+```text
+python3 -m pip install matplotlib
+```
+
+(Use the command the bot prints — it matches the Python you’re running.)
 
 ---
 
