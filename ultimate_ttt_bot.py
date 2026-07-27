@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1043,7 +1043,7 @@ def _read_player_line_unix() -> str:
         # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-        sys.stdout.write("> ")
+        sys.stdout.write("X move: ")
         sys.stdout.flush()
 
         while True:
@@ -1054,28 +1054,29 @@ def _read_player_line_unix() -> str:
             code = ord(ch)
 
             # Hotkeys (control characters)
+            # End the input line, then leave a blank line before the next message
             if code == 0x15:  # Ctrl+U
-                sys.stdout.write("\n")
+                sys.stdout.write("\n\n")
                 sys.stdout.flush()
                 return _CMD_UPDATE
             if code == 0x02:  # Ctrl+B
-                sys.stdout.write("\n")
+                sys.stdout.write("\n\n")
                 sys.stdout.flush()
                 return _CMD_UNDO
             if code == 0x11:  # Ctrl+Q
-                sys.stdout.write("\n")
+                sys.stdout.write("\n\n")
                 sys.stdout.flush()
                 return _CMD_QUIT
             if code == 0x03:  # Ctrl+C
                 raise KeyboardInterrupt
             if code == 0x04 and not buf:  # Ctrl+D on empty line → quit
-                sys.stdout.write("\n")
+                sys.stdout.write("\n\n")
                 sys.stdout.flush()
                 return _CMD_QUIT
 
-            # Enter
+            # Enter — newline ends the typed move, blank line before next output
             if ch in ("\n", "\r"):
-                sys.stdout.write("\n")
+                sys.stdout.write("\n\n")
                 sys.stdout.flush()
                 return "".join(buf)
 
@@ -1104,7 +1105,7 @@ def _read_player_line_windows() -> str:
     import msvcrt  # type: ignore
 
     buf: List[str] = []
-    sys.stdout.write("> ")
+    sys.stdout.write("X move: ")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
@@ -1114,21 +1115,21 @@ def _read_player_line_windows() -> str:
             continue
         code = ord(ch)
         if code == 0x15:  # Ctrl+U
-            sys.stdout.write("\n")
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
             return _CMD_UPDATE
         if code == 0x02:  # Ctrl+B
-            sys.stdout.write("\n")
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
             return _CMD_UNDO
         if code == 0x11:  # Ctrl+Q
-            sys.stdout.write("\n")
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
             return _CMD_QUIT
         if code == 0x03:
             raise KeyboardInterrupt
         if ch in ("\r", "\n"):
-            sys.stdout.write("\n")
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
             return "".join(buf)
         if code in (0x08, 0x7F):
@@ -1482,6 +1483,8 @@ def play_loop(
     # Snapshots before each of your turns (for Ctrl+B undo of your move + bot reply)
     checkpoints: List[Tuple[State, List[Dict[str, float]]]] = []
 
+    # Leading blank line, then title
+    print(file=sys.stderr)
     emit(
         f"Ultimate Tic-Tac-Toe bot v{__version__}  (you = X, bot = O)",
         file=sys.stderr,
@@ -1494,8 +1497,8 @@ def play_loop(
     )
 
     if check_updates:
+        # emit() already leaves one blank line after the version message
         check_for_updates(quiet=False)
-        emit("", file=sys.stderr)
 
     def finish(reason: str = "end") -> None:
         if state.is_terminal():
