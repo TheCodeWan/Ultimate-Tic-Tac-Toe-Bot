@@ -115,8 +115,10 @@ After **your** move:
 
 After the **bot** moves:
 
-- **`Bot move: 5-3`** (example)  
+- **`O move: 5-3`** (example; orange)  
 - **Win chance** — rough odds you’ll still win (plus draw / bot win). Values under 0.1% show as `<0.1%`.  
+
+Your typed move at the **`X move:`** prompt is shown in **yellow**.
 
 At the **end** of the game:
 

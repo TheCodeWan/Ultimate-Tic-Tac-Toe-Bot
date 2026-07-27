@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1170,12 +1170,16 @@ def _read_player_line_unix() -> str:
         # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-        sys.stdout.write("X move: ")
+        # Yellow prompt + typed text (ANSI; works in raw mode)
+        YELLOW, RESET = "\033[33m", "\033[0m"
+        sys.stdout.write(f"{YELLOW}X move: ")
         sys.stdout.flush()
 
         while True:
             ch = sys.stdin.read(1)
             if not ch:
+                sys.stdout.write(RESET)
+                sys.stdout.flush()
                 return _CMD_QUIT
 
             code = ord(ch)
@@ -1183,27 +1187,29 @@ def _read_player_line_unix() -> str:
             # Hotkeys (control characters)
             # End the input line, then leave a blank line before the next message
             if code == 0x15:  # Ctrl+U
-                sys.stdout.write("\n\n")
+                sys.stdout.write(f"{RESET}\n\n")
                 sys.stdout.flush()
                 return _CMD_UPDATE
             if code == 0x02:  # Ctrl+B
-                sys.stdout.write("\n\n")
+                sys.stdout.write(f"{RESET}\n\n")
                 sys.stdout.flush()
                 return _CMD_UNDO
             if code == 0x11:  # Ctrl+Q
-                sys.stdout.write("\n\n")
+                sys.stdout.write(f"{RESET}\n\n")
                 sys.stdout.flush()
                 return _CMD_QUIT
             if code == 0x03:  # Ctrl+C
+                sys.stdout.write(RESET)
+                sys.stdout.flush()
                 raise KeyboardInterrupt
             if code == 0x04 and not buf:  # Ctrl+D on empty line → quit
-                sys.stdout.write("\n\n")
+                sys.stdout.write(f"{RESET}\n\n")
                 sys.stdout.flush()
                 return _CMD_QUIT
 
             # Enter — newline ends the typed move, blank line before next output
             if ch in ("\n", "\r"):
-                sys.stdout.write("\n\n")
+                sys.stdout.write(f"{RESET}\n\n")
                 sys.stdout.flush()
                 return "".join(buf)
 
@@ -1219,11 +1225,13 @@ def _read_player_line_unix() -> str:
             if code < 32:
                 continue
 
-            # Printable
+            # Printable (stay in yellow)
             buf.append(ch)
             sys.stdout.write(ch)
             sys.stdout.flush()
     finally:
+        sys.stdout.write("\033[0m")
+        sys.stdout.flush()
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
@@ -1232,7 +1240,8 @@ def _read_player_line_windows() -> str:
     import msvcrt  # type: ignore
 
     buf: List[str] = []
-    sys.stdout.write("X move: ")
+    YELLOW, RESET = "\033[33m", "\033[0m"
+    sys.stdout.write(f"{YELLOW}X move: ")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
@@ -1242,21 +1251,23 @@ def _read_player_line_windows() -> str:
             continue
         code = ord(ch)
         if code == 0x15:  # Ctrl+U
-            sys.stdout.write("\n\n")
+            sys.stdout.write(f"{RESET}\n\n")
             sys.stdout.flush()
             return _CMD_UPDATE
         if code == 0x02:  # Ctrl+B
-            sys.stdout.write("\n\n")
+            sys.stdout.write(f"{RESET}\n\n")
             sys.stdout.flush()
             return _CMD_UNDO
         if code == 0x11:  # Ctrl+Q
-            sys.stdout.write("\n\n")
+            sys.stdout.write(f"{RESET}\n\n")
             sys.stdout.flush()
             return _CMD_QUIT
         if code == 0x03:
+            sys.stdout.write(RESET)
+            sys.stdout.flush()
             raise KeyboardInterrupt
         if ch in ("\r", "\n"):
-            sys.stdout.write("\n\n")
+            sys.stdout.write(f"{RESET}\n\n")
             sys.stdout.flush()
             return "".join(buf)
         if code in (0x08, 0x7F):
@@ -1748,7 +1759,7 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"[bold red]Bot move:[/] {format_move(bot_b, bot_c)}")
+            emit(f"[bold orange1]O move:[/] {format_move(bot_b, bot_c)}")
 
             if state.is_terminal():
                 g = state.global_winner()
@@ -1760,7 +1771,7 @@ def play_loop(
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
                     emit(
-                        f"Estimated win chance: [bold red]{format_pct(p_win)}[/]  (bot won)"
+                        f"Estimated win chance: [bold orange1]{format_pct(p_win)}[/]  (O won)"
                     )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
@@ -1785,7 +1796,7 @@ def play_loop(
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"[bold red]Bot move:[/] {format_move(bot_b, bot_c)}")
+            emit(f"[bold orange1]O move:[/] {format_move(bot_b, bot_c)}")
 
 
 def _announce_end(state: State) -> None:
