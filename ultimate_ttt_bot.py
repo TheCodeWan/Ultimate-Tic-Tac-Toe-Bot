@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.11"
+__version__ = "1.5.12"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1036,8 +1036,8 @@ def apply_update() -> bool:
             if code == 0:
                 if out:
                     emit(out, style="dim")
-                emit(f"Repository updated in:", style="green")
-                emit(f"  {dest}", style="green")
+                emit(f"Repository updated in:", style="#08e600")
+                emit(f"  {dest}", style="#08e600")
                 emit(
                     "Press Ctrl+Q to quit, then run the script again to use the new version.",
                     style="bold",
@@ -1052,7 +1052,7 @@ def apply_update() -> bool:
     emit("Downloading full repository from GitHub...", style="cyan")
     ok, msg = _install_repo_from_zip(dest)
     if not ok:
-        emit(f"Update failed: {msg}", file=sys.stderr, style="bold red")
+        emit(f"Update failed: {msg}", file=sys.stderr, style="bold #ff0808")
         return False
 
     # Report new version if we can read it from the replaced file
@@ -1063,8 +1063,8 @@ def apply_update() -> bool:
     except Exception:
         pass
 
-    emit(f"Full repo installed (bot v{new_ver}):", style="green")
-    emit(f"  {dest}", style="green")
+    emit(f"Full repo installed (bot v{new_ver}):", style="#08e600")
+    emit(f"  {dest}", style="#08e600")
     emit(
         "Press Ctrl+Q to quit, then run the script again to use the new version.",
         style="bold",
@@ -1506,9 +1506,9 @@ def _write_chance_svg(
         f'fill="#111">{_xml_escape(full_title)}</text>'
         f'<line x1="{ml}" y1="48" x2="{ml + 28}" y2="48" stroke="#1f77b4" stroke-width="3"/>'
         f'<text x="{ml + 34}" y="52" font-family="system-ui,sans-serif" font-size="13" fill="#222">You (X) win</text>'
-        f'<line x1="{ml + 160}" y1="48" x2="{ml + 188}" y2="48" stroke="#2ca02c" stroke-width="3"/>'
+        f'<line x1="{ml + 160}" y1="48" x2="{ml + 188}" y2="48" stroke="#08e600" stroke-width="3"/>'
         f'<text x="{ml + 194}" y="52" font-family="system-ui,sans-serif" font-size="13" fill="#222">Draw</text>'
-        f'<line x1="{ml + 280}" y1="48" x2="{ml + 308}" y2="48" stroke="#d62728" stroke-width="3"/>'
+        f'<line x1="{ml + 280}" y1="48" x2="{ml + 308}" y2="48" stroke="#ff0808" stroke-width="3"/>'
         f'<text x="{ml + 314}" y="52" font-family="system-ui,sans-serif" font-size="13" fill="#222">Bot (O) win</text>'
     )
 
@@ -1519,8 +1519,8 @@ def _write_chance_svg(
   <rect x="{ml}" y="{mt}" width="{plot_w}" height="{plot_h}" fill="#fff" stroke="#ccc"/>
   {"".join(grid)}
   <polyline fill="none" stroke="#1f77b4" stroke-width="2.5" points="{poly("x_win")}"/>
-  <polyline fill="none" stroke="#2ca02c" stroke-width="2.5" points="{poly("draw")}"/>
-  <polyline fill="none" stroke="#d62728" stroke-width="2.5" points="{poly("o_win")}"/>
+  <polyline fill="none" stroke="#08e600" stroke-width="2.5" points="{poly("draw")}"/>
+  <polyline fill="none" stroke="#ff0808" stroke-width="2.5" points="{poly("o_win")}"/>
   {"".join(xticks)}
   <text x="{w / 2:.0f}" y="{h - 16}" text-anchor="middle"
         font-family="system-ui,sans-serif" font-size="13" fill="#333">After bot move #</text>
@@ -1586,7 +1586,7 @@ def _write_chance_png(
     ax.plot(
         turns,
         o_win,
-        color="#d62728",
+        color="#ff0808",
         linestyle="-",
         linewidth=4.0,
         marker=None,
@@ -1599,7 +1599,7 @@ def _write_chance_png(
     ax.plot(
         turns,
         draw,
-        color="#2ca02c",
+        color="#08e600",
         linestyle="-",
         linewidth=3.0,
         marker=None,
@@ -1685,7 +1685,7 @@ def play_loop(
         file=sys.stderr,
     )
     emit(
-        "Moves: [bold]BOARD-SPACE[/]  e.g. [green]5-5[/] for center of center",
+        "Moves: [bold]BOARD-SPACE[/]  e.g. [#08e600]5-5[/] for center of center",
         file=sys.stderr,
     )
     emit("Shortcuts (work while typing a move):", file=sys.stderr)
@@ -1747,13 +1747,13 @@ def play_loop(
                 emit(
                     "Invalid format. Use BOARD-SPACE with digits 1-9, e.g. 1-2",
                     file=sys.stderr,
-                    style="bold red",
+                    style="bold #ff0808",
                 )
                 continue
             b, c = parsed
             legal = state.legal_moves()
             if (b, c) not in legal:
-                emit("Illegal move.", file=sys.stderr, style="bold red")
+                emit("Illegal move.", file=sys.stderr, style="bold #ff0808")
                 if state.active is not None and not state.local_closed(state.active):
                     emit(
                         f"You must play in local board {state.active + 1}.",
@@ -1778,9 +1778,9 @@ def play_loop(
                 state, (b, c), rng
             )
             score_style = (
-                "bold green"
+                "bold #08e600"
                 if quality >= 80
-                else ("yellow" if quality >= 50 else "bold red")
+                else ("yellow" if quality >= 50 else "bold #ff0808")
             )
             emit(
                 f"Your move score: [{score_style}]{quality}/100[/]  "
@@ -1827,7 +1827,7 @@ def play_loop(
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
                     emit(
-                        f"Estimated win chance: [bold green]{format_pct(p_win)}[/]  (you won)"
+                        f"Estimated win chance: [bold #08e600]{format_pct(p_win)}[/]  (you won)"
                     )
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
