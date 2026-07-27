@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.6"
+__version__ = "1.5.7"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1165,12 +1165,21 @@ def emit_title(title: str, subtitle: str = "", file=None) -> None:
         emit(f"[bold bright_cyan]{main}[/]", file=file)
 
 
-# ANSI helpers for move lines (raw mode). No double-width — that only stretches
-# text horizontally and looks distorted.
+# ANSI helpers for move lines (raw mode).
+# Double-height for prompts (taller, not horizontally stretched).
+# Double-width is avoided — it only stretches text sideways.
 _ANSI_RESET = "\033[0m"
 _ANSI_GOLD_BOLD = "\033[1;38;2;255;193;7m"  # bold gold for "X move:" label
-_ANSI_WHITE = "\033[38;2;255;255;255m"  # plain white for typed characters
-_ANSI_ORANGE = "\033[38;2;253;108;0m"  # #FD6C00 for O move
+_ANSI_WHITE = "\033[38;2;255;255;255m"  # plain white (not bold) for move coords
+_ANSI_O_PROMPT = "\033[1;38;2;208;0;247m"  # bold #d000f7 for "O move:" label
+_ANSI_DH_TOP = "\033#3"  # double-height top half
+_ANSI_DH_BOT = "\033#4"  # double-height bottom half
+
+
+def _write_double_height_line(file, text: str) -> None:
+    """Write one logical line as VT100 double-height (two physical rows)."""
+    file.write(f"{_ANSI_DH_TOP}{text}{_ANSI_RESET}\n")
+    file.write(f"{_ANSI_DH_BOT}{text}{_ANSI_RESET}\n")
 
 
 def emit_move_line(
@@ -1182,18 +1191,19 @@ def emit_move_line(
     file=None,
 ) -> None:
     """
-    Print a move line: colored prompt/label, then move text (default white).
-    Normal proportions; blank line after.
+    Print a move line with a larger (double-height) colored label and
+    plain white move text, then a blank line.
     """
     if file is None:
         file = sys.stdout
+    # Embed colors inside the doubled text so both halves match
+    colored = f"{label_color}{label} {_ANSI_RESET}{move_color}{move}"
     try:
-        file.write(
-            f"{label_color}{label} {_ANSI_RESET}{move_color}{move}{_ANSI_RESET}\n\n"
-        )
+        _write_double_height_line(file, colored)
+        file.write("\n")
         file.flush()
     except Exception:
-        emit(f"[bold #FD6C00]{label}[/] [white]{move}[/]", file=file)
+        emit(f"[bold #d000f7]{label}[/] [white]{move}[/]", file=file)
 
 
 def _read_player_line_unix() -> str:
@@ -1225,9 +1235,10 @@ def _read_player_line_unix() -> str:
         # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-        # Gold bold label; plain white for what you type (normal proportions)
         RESET = _ANSI_RESET
-        sys.stdout.write(f"{_ANSI_GOLD_BOLD}X move: {_ANSI_WHITE}")
+        # Larger gold "X move:" prompt (double-height), then normal white typing line
+        _write_double_height_line(sys.stdout, f"{_ANSI_GOLD_BOLD}X move:")
+        sys.stdout.write(f"{_ANSI_WHITE}")
         sys.stdout.flush()
 
         while True:
@@ -1280,7 +1291,7 @@ def _read_player_line_unix() -> str:
             if code < 32:
                 continue
 
-            # Printable — plain white (not bold)
+            # Printable — plain white, not bold, normal size
             buf.append(ch)
             sys.stdout.write(ch)
             sys.stdout.flush()
@@ -1296,7 +1307,8 @@ def _read_player_line_windows() -> str:
 
     buf: List[str] = []
     RESET = _ANSI_RESET
-    sys.stdout.write(f"{_ANSI_GOLD_BOLD}X move: {_ANSI_WHITE}")
+    _write_double_height_line(sys.stdout, f"{_ANSI_GOLD_BOLD}X move:")
+    sys.stdout.write(f"{_ANSI_WHITE}")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
@@ -1817,7 +1829,7 @@ def play_loop(
             emit_move_line(
                 "O move:",
                 format_move(bot_b, bot_c),
-                label_color=_ANSI_ORANGE,
+                label_color=_ANSI_O_PROMPT,
                 move_color=_ANSI_WHITE,
             )
 
@@ -1831,7 +1843,7 @@ def play_loop(
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
                     emit(
-                        f"Estimated win chance: [bold #FD6C00]{format_pct(p_win)}[/]  (O won)"
+                        f"Estimated win chance: [bold #d000f7]{format_pct(p_win)}[/]  (O won)"
                     )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
@@ -1859,7 +1871,7 @@ def play_loop(
             emit_move_line(
                 "O move:",
                 format_move(bot_b, bot_c),
-                label_color=_ANSI_ORANGE,
+                label_color=_ANSI_O_PROMPT,
                 move_color=_ANSI_WHITE,
             )
 
