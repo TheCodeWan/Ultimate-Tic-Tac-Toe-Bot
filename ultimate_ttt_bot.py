@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1170,9 +1170,11 @@ def _read_player_line_unix() -> str:
         # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-        # Yellow prompt + typed text (ANSI; works in raw mode)
-        YELLOW, RESET = "\033[33m", "\033[0m"
-        sys.stdout.write(f"{YELLOW}X move: ")
+        # Bold golden-yellow prompt + typed text (ANSI; works in raw mode)
+        # Truecolor gold ≈ #FFC107; falls back fine on most modern terminals
+        GOLD = "\033[1;38;2;255;193;7m"
+        RESET = "\033[0m"
+        sys.stdout.write(f"{GOLD}X move: ")
         sys.stdout.flush()
 
         while True:
@@ -1225,7 +1227,7 @@ def _read_player_line_unix() -> str:
             if code < 32:
                 continue
 
-            # Printable (stay in yellow)
+            # Printable (stay bold gold)
             buf.append(ch)
             sys.stdout.write(ch)
             sys.stdout.flush()
@@ -1240,8 +1242,8 @@ def _read_player_line_windows() -> str:
     import msvcrt  # type: ignore
 
     buf: List[str] = []
-    YELLOW, RESET = "\033[33m", "\033[0m"
-    sys.stdout.write(f"{YELLOW}X move: ")
+    GOLD, RESET = "\033[1;38;2;255;193;7m", "\033[0m"
+    sys.stdout.write(f"{GOLD}X move: ")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
