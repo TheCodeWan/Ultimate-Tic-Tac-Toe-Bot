@@ -33,6 +33,25 @@ python3 -m pip install matplotlib
 
 ---
 
+## How the game works (simple)
+
+Imagine normal tic-tac-toe, but **each square is itself a full tic-tac-toe board**.
+
+1. Win a **small board** by getting 3-in-a-row inside it.  
+2. Win the **whole game** by winning **3 small boards in a row** on the big board.
+
+### The important rule
+
+Wherever you play **inside** a small board sends your opponent to that **matching** small board on the big grid.
+
+Example: you play in the **bottom-right cell** of any small board → they must play in the **bottom-right small board**.
+
+If that board is already finished, they may play **anywhere** still open.
+
+**Tip:** Having more small boards than the bot does **not** always mean you’re winning. Only a **line of three small boards** wins the game.
+
+---
+
 ## How to type a move
 
 The big board is **9 small boards**, laid out like this:
@@ -69,25 +88,6 @@ Other commands while playing:
 
 ---
 
-## How the game works (simple)
-
-Imagine normal tic-tac-toe, but **each square is itself a full tic-tac-toe board**.
-
-1. Win a **small board** by getting 3-in-a-row inside it.  
-2. Win the **whole game** by winning **3 small boards in a row** on the big board.
-
-### The important rule
-
-Wherever you play **inside** a small board sends your opponent to that **matching** small board on the big grid.
-
-Example: you play in the **bottom-right cell** of any small board → they must play in the **bottom-right small board**.
-
-If that board is already finished, they may play **anywhere** still open.
-
-**Tip:** Having more small boards than the bot does **not** always mean you’re winning. Only a **line of three small boards** wins the game.
-
----
-
 ## What the bot tells you
 
 After **your** move:
@@ -102,7 +102,7 @@ After the **bot** moves:
 At the **end** of the game:
 
 - A **chart** image of how those chances changed (needs matplotlib).  
-  - Mac: often opens in Preview after a few seconds  
+  - Mac: opens in Preview after a few seconds  
   - Windows/Linux: open `utt_chances.png` yourself  
 
 ---
