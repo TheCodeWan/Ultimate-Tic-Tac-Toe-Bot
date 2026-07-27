@@ -15,17 +15,21 @@ Move format: BOARD-SPACE  (e.g. 1-2)
 from __future__ import annotations
 
 import argparse
+import io
 import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -916,68 +920,154 @@ def check_for_updates(quiet: bool = False) -> Optional[bool]:
     return False
 
 
-def apply_update() -> bool:
-    """
-    Download the latest bot script from GitHub and replace this file.
+def _zip_url() -> str:
+    return (
+        f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/"
+        f"{GITHUB_BRANCH}.zip"
+    )
 
-    Works for a single .py file — no git clone required.
-    If this directory is also a git clone, tries `git pull` afterward for README/etc.
-    Restart the program after a successful update.
-    """
-    emit("Downloading latest bot from GitHub...")
-    remote_src, err = _fetch_remote_bot_source_err(timeout=60.0)
-    if remote_src is None:
-        emit(
-            f"Update failed: could not download ({err or 'unknown error'}).",
-            file=sys.stderr,
+
+def _download_bytes(url: str, timeout: float = 60.0) -> Tuple[Optional[bytes], str]:
+    """Download URL to bytes (urllib, then curl)."""
+    errors: List[str] = []
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            url, headers={"User-Agent": f"ultimate-ttt-bot/{__version__}"}
         )
-        return False
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read(), ""
+    except Exception as exc:
+        errors.append(f"urllib: {exc}")
+    try:
+        proc = subprocess.run(
+            ["curl", "-fsSL", "--max-time", str(int(timeout)), url],
+            capture_output=True,
+            timeout=timeout + 5,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout, ""
+        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+        errors.append(f"curl: {err or f'exit {proc.returncode}'}")
+    except Exception as exc:
+        errors.append(f"curl: {exc}")
+    return None, "; ".join(errors)
 
-    remote_ver = _parse_version(remote_src) or "?"
-    path = _script_path()
-    tmp_path = path + ".new"
-    bak_path = path + ".bak"
+
+def _install_repo_from_zip(dest_dir: str) -> Tuple[bool, str]:
+    """
+    Download the full GitHub repo zip and copy its files into dest_dir.
+    Returns (ok, message).
+    """
+    data, err = _download_bytes(_zip_url(), timeout=90.0)
+    if data is None:
+        return False, err or "download failed"
 
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(remote_src)
-            if not remote_src.endswith("\n"):
-                f.write("\n")
-        # Keep a simple backup of the previous file
-        try:
-            if os.path.isfile(path):
-                with open(path, "rb") as src, open(bak_path, "wb") as dst:
-                    dst.write(src.read())
-        except Exception:
-            pass
-        os.replace(tmp_path, path)
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = zf.namelist()
+            if not names:
+                return False, "empty zip"
+            # GitHub zips are rooted at Repo-branch/...
+            root_prefix = names[0].split("/")[0] + "/"
+            with tempfile.TemporaryDirectory() as tmp:
+                zf.extractall(tmp)
+                src_root = os.path.join(tmp, root_prefix.rstrip("/"))
+                if not os.path.isdir(src_root):
+                    # Fallback: first directory under tmp
+                    subs = [
+                        os.path.join(tmp, n)
+                        for n in os.listdir(tmp)
+                        if os.path.isdir(os.path.join(tmp, n))
+                    ]
+                    if not subs:
+                        return False, "could not find extracted project folder"
+                    src_root = subs[0]
+
+                # Copy all files from repo into dest (overwrite)
+                for dirpath, _dirnames, filenames in os.walk(src_root):
+                    rel = os.path.relpath(dirpath, src_root)
+                    # Skip nested .git from zip (there usually isn't one)
+                    if rel == ".git" or rel.startswith(".git" + os.sep):
+                        continue
+                    target_dir = dest_dir if rel == "." else os.path.join(dest_dir, rel)
+                    os.makedirs(target_dir, exist_ok=True)
+                    for name in filenames:
+                        if name in {".DS_Store"}:
+                            continue
+                        shutil.copy2(
+                            os.path.join(dirpath, name),
+                            os.path.join(target_dir, name),
+                        )
+        return True, dest_dir
     except Exception as exc:
-        emit(f"Update failed while saving file: {exc}", file=sys.stderr)
-        try:
-            if os.path.isfile(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
-        return False
+        return False, str(exc)
 
-    emit(f"Updated bot script to v{remote_ver}:")
-    emit(f"  {path}")
 
-    # Optional: if user has a full clone, refresh the rest of the repo too
+def apply_update() -> bool:
+    """
+    Download the **whole repository** (not just this script).
+
+    - If this folder is a git clone: ``git pull``.
+    - Otherwise: download the GitHub zip of main and overwrite project files
+      in this script's directory.
+
+    Restart the program after a successful update.
+    """
+    dest = _script_dir()
+
     if _is_git_checkout():
-        emit("Also refreshing git repo files...")
-        code, out, gerr = _run_git(
-            ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
+        emit("Updating full repository (git pull)...", style="cyan")
+        code, _, err = _run_git(
+            ["fetch", "--quiet", "origin", GITHUB_BRANCH], timeout=60.0
         )
-        if code == 0 and out:
-            emit(out)
-        elif code != 0:
+        if code != 0:
             emit(
-                f"(git pull skipped/failed: {gerr or out or 'error'} — bot file is still updated.)",
+                f"git fetch failed ({err or 'error'}). Trying zip download instead...",
                 file=sys.stderr,
+                style="yellow",
+            )
+        else:
+            code, out, err = _run_git(
+                ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
+            )
+            if code == 0:
+                if out:
+                    emit(out, style="dim")
+                emit(f"Repository updated in:", style="green")
+                emit(f"  {dest}", style="green")
+                emit(
+                    "Press Ctrl+Q to quit, then run the script again to use the new version.",
+                    style="bold",
+                )
+                return True
+            emit(
+                f"git pull failed ({err or out or 'error'}). Trying zip download instead...",
+                file=sys.stderr,
+                style="yellow",
             )
 
-    emit("Press Ctrl+Q to quit, then run the script again to use the new version.")
+    emit("Downloading full repository from GitHub...", style="cyan")
+    ok, msg = _install_repo_from_zip(dest)
+    if not ok:
+        emit(f"Update failed: {msg}", file=sys.stderr, style="bold red")
+        return False
+
+    # Report new version if we can read it from the replaced file
+    new_ver = "?"
+    try:
+        with open(_script_path(), encoding="utf-8") as f:
+            new_ver = _parse_version(f.read()) or "?"
+    except Exception:
+        pass
+
+    emit(f"Full repo installed (bot v{new_ver}):", style="green")
+    emit(f"  {dest}", style="green")
+    emit(
+        "Press Ctrl+Q to quit, then run the script again to use the new version.",
+        style="bold",
+    )
     return True
 
 
@@ -1005,12 +1095,49 @@ def _is_git_checkout() -> bool:
     return code == 0 and out == "true"
 
 
-def emit(*args, file=None, **kwargs) -> None:
+# Optional Rich console (prettier output). Falls back to plain print.
+_rich_stdout = None  # Console | False | None (uninitialized)
+_rich_stderr = None
+
+
+def _rich_console(stderr: bool = False):
+    """Lazy-load Rich Console; False means 'tried and unavailable'."""
+    global _rich_stdout, _rich_stderr
+    if stderr:
+        if _rich_stderr is None:
+            try:
+                from rich.console import Console
+
+                _rich_stderr = Console(stderr=True, highlight=False)
+            except Exception:
+                _rich_stderr = False
+        return _rich_stderr if _rich_stderr is not False else None
+    if _rich_stdout is None:
+        try:
+            from rich.console import Console
+
+            _rich_stdout = Console(highlight=False)
+        except Exception:
+            _rich_stdout = False
+    return _rich_stdout if _rich_stdout is not False else None
+
+
+def emit(*args, file=None, style: Optional[str] = None, **kwargs) -> None:
     """Print a message, then a blank line (extra spacing in the terminal)."""
     if file is None:
         file = sys.stdout
+    text = " ".join(str(a) for a in args) if args else ""
+    use_stderr = file in (sys.stderr,)
+    console = _rich_console(stderr=use_stderr)
+    if console is not None and file in (sys.stdout, sys.stderr):
+        if style:
+            console.print(text, style=style)
+        else:
+            console.print(text)
+        console.print()
+        return
     kwargs.setdefault("flush", True)
-    print(*args, file=file, **kwargs)
+    print(text, file=file, **kwargs)
     print(file=file, flush=True)
 
 
@@ -1486,13 +1613,18 @@ def play_loop(
     # Leading blank line, then title
     print(file=sys.stderr)
     emit(
-        f"Ultimate Tic-Tac-Toe bot v{__version__}  (you = X, bot = O)",
+        f"[bold cyan]Ultimate Tic-Tac-Toe Bot[/] v{__version__}  "
+        f"([bold]you = X[/], bot = O)",
         file=sys.stderr,
     )
-    emit("Moves: BOARD-SPACE  e.g. 5-5 for center of center", file=sys.stderr)
+    emit(
+        "Moves: [bold]BOARD-SPACE[/]  e.g. [green]5-5[/] for center of center",
+        file=sys.stderr,
+    )
     emit("Shortcuts (work while typing a move):", file=sys.stderr)
     emit(
-        "  Ctrl+U = update    Ctrl+B = undo last turn    Ctrl+Q = quit",
+        "  [bold]Ctrl+U[/] = update    [bold]Ctrl+B[/] = undo last turn    "
+        "[bold]Ctrl+Q[/] = quit",
         file=sys.stderr,
     )
 
@@ -1548,19 +1680,25 @@ def play_loop(
                 emit(
                     "Invalid format. Use BOARD-SPACE with digits 1-9, e.g. 1-2",
                     file=sys.stderr,
+                    style="bold red",
                 )
                 continue
             b, c = parsed
             legal = state.legal_moves()
             if (b, c) not in legal:
-                emit("Illegal move.", file=sys.stderr)
+                emit("Illegal move.", file=sys.stderr, style="bold red")
                 if state.active is not None and not state.local_closed(state.active):
                     emit(
                         f"You must play in local board {state.active + 1}.",
                         file=sys.stderr,
+                        style="yellow",
                     )
                 else:
-                    emit("That cell is not available.", file=sys.stderr)
+                    emit(
+                        "That cell is not available.",
+                        file=sys.stderr,
+                        style="yellow",
+                    )
                 continue
 
             # Save board before this turn (for undo of your move + bot reply)
@@ -1572,16 +1710,21 @@ def play_loop(
             quality, rank, n_legal, best_moves, chose_best = rank_player_move(
                 state, (b, c), rng
             )
+            score_style = (
+                "bold green"
+                if quality >= 80
+                else ("yellow" if quality >= 50 else "bold red")
+            )
             emit(
-                f"Your move score: {quality}/100  "
+                f"Your move score: [{score_style}]{quality}/100[/]  "
                 f"(rank {rank} of {n_legal}; 1=worst, {n_legal}=best)",
             )
             if not chose_best and best_moves:
                 best_str = ", ".join(format_move(bb, cc) for bb, cc in best_moves)
                 if len(best_moves) == 1:
-                    emit(f"Best move would have been: {best_str}")
+                    emit(f"Best move would have been: [bold cyan]{best_str}[/]")
                 else:
-                    emit(f"Best moves would have been: {best_str}")
+                    emit(f"Best moves would have been: [bold cyan]{best_str}[/]")
 
             state.apply(b, c)
 
@@ -1602,22 +1745,28 @@ def play_loop(
                 return
 
             # Bot move
-            emit("Thinking...")
+            emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"Bot move: {format_move(bot_b, bot_c)}")
+            emit(f"[bold red]Bot move:[/] {format_move(bot_b, bot_c)}")
 
             if state.is_terminal():
                 g = state.global_winner()
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (you won)")
+                    emit(
+                        f"Estimated win chance: [bold green]{format_pct(p_win)}[/]  (you won)"
+                    )
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (bot won)")
+                    emit(
+                        f"Estimated win chance: [bold red]{format_pct(p_win)}[/]  (bot won)"
+                    )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (draw)")
+                    emit(
+                        f"Estimated win chance: [bold]{format_pct(p_win)}[/]  (draw)"
+                    )
                 _record_chances(chance_history, p_win, p_draw, p_loss)
                 finish()
                 return
@@ -1627,16 +1776,16 @@ def play_loop(
                 state, rng, n_sims=win_sims
             )
             emit(
-                f"Estimated win chance: {format_pct(p_win)}  "
+                f"Estimated win chance: [bold blue]{format_pct(p_win)}[/]  "
                 f"(draw {format_pct(p_draw)}, O win {format_pct(p_loss)})"
             )
             _record_chances(chance_history, p_win, p_draw, p_loss)
         else:
             # Should not happen in normal loop (bot moves immediately after X)
-            emit("Thinking...")
+            emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            emit(f"Bot move: {format_move(bot_b, bot_c)}")
+            emit(f"[bold red]Bot move:[/] {format_move(bot_b, bot_c)}")
 
 
 def _announce_end(state: State) -> None:

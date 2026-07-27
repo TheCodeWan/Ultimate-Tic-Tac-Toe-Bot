@@ -9,7 +9,10 @@ Play **Ultimate Tic-Tac-Toe** in your terminal against a computer.
 Works on **Mac, Windows, or Linux** in a normal terminal that has **Python**.  
 **Git** is optional (only if you want `git clone` / `git pull`).
 
-You also need **matplotlib** (for the end-of-game chart). If it’s missing, the bot **stops and tells you exactly what to type** to install it.
+You also need:
+
+- **matplotlib** — end-of-game chart (required; bot exits with install instructions if missing)  
+- **rich** — prettier colored terminal text (recommended; falls back to plain text if missing)
 
 ---
 
@@ -146,16 +149,18 @@ python3 ultimate_ttt_bot.py --time 10
 
 ## Updates
 
-You **don’t** need a full git clone just to update the bot script.
+**Ctrl+U downloads the whole repository**, not just one file.
 
 1. On startup the bot checks GitHub for a newer version.  
 2. If one exists, it tells you.  
-3. Press **Ctrl+U** to download the new `ultimate_ttt_bot.py` over the old one.  
+3. Press **Ctrl+U**:
+   - If this folder is a **git clone** → `git pull`  
+   - Otherwise → downloads the full project **zip** from GitHub and overwrites files here  
 4. Press **Ctrl+Q**, then run the script again so the new code loads.
 
-Needs internet. Works for a single `.py` file or a full repo folder.
+Needs internet.
 
-If you use git for the whole project:
+You can still update manually with git:
 
 ```bash
 cd Ultimate-Tic-Tac-Toe-Bot
