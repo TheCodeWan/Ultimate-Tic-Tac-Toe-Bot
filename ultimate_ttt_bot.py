@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.7"
+__version__ = "1.5.10"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -910,6 +910,7 @@ def check_for_updates(quiet: bool = False) -> Optional[bool]:
     if _version_key(remote_ver) > _version_key(__version__):
         emit(
             f"Update available: you have v{__version__}, latest is v{remote_ver}.",
+            style="bold #ff35ff",
             file=sys.stderr,
         )
         emit("Press Ctrl+U to download the update.", file=sys.stderr)
@@ -1166,20 +1167,11 @@ def emit_title(title: str, subtitle: str = "", file=None) -> None:
 
 
 # ANSI helpers for move lines (raw mode).
-# Double-height for prompts (taller, not horizontally stretched).
-# Double-width is avoided — it only stretches text sideways.
+# Move prompts and coords stay normal height (title alone uses double-height).
 _ANSI_RESET = "\033[0m"
 _ANSI_GOLD_BOLD = "\033[1;38;2;255;193;7m"  # bold gold for "X move:" label
 _ANSI_WHITE = "\033[38;2;255;255;255m"  # plain white (not bold) for move coords
 _ANSI_O_PROMPT = "\033[1;38;2;208;0;247m"  # bold #d000f7 for "O move:" label
-_ANSI_DH_TOP = "\033#3"  # double-height top half
-_ANSI_DH_BOT = "\033#4"  # double-height bottom half
-
-
-def _write_double_height_line(file, text: str) -> None:
-    """Write one logical line as VT100 double-height (two physical rows)."""
-    file.write(f"{_ANSI_DH_TOP}{text}{_ANSI_RESET}\n")
-    file.write(f"{_ANSI_DH_BOT}{text}{_ANSI_RESET}\n")
 
 
 def emit_move_line(
@@ -1191,16 +1183,15 @@ def emit_move_line(
     file=None,
 ) -> None:
     """
-    Print a move line with a larger (double-height) colored label and
-    plain white move text, then a blank line.
+    Print a move line with a colored label and plain white move text
+    at normal size, then a blank line.
     """
     if file is None:
         file = sys.stdout
-    # Embed colors inside the doubled text so both halves match
-    colored = f"{label_color}{label} {_ANSI_RESET}{move_color}{move}"
     try:
-        _write_double_height_line(file, colored)
-        file.write("\n")
+        file.write(
+            f"{label_color}{label} {_ANSI_RESET}{move_color}{move}{_ANSI_RESET}\n\n"
+        )
         file.flush()
     except Exception:
         emit(f"[bold #d000f7]{label}[/] [white]{move}[/]", file=file)
@@ -1236,9 +1227,8 @@ def _read_player_line_unix() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
         RESET = _ANSI_RESET
-        # Larger gold "X move:" prompt (double-height), then normal white typing line
-        _write_double_height_line(sys.stdout, f"{_ANSI_GOLD_BOLD}X move:")
-        sys.stdout.write(f"{_ANSI_WHITE}")
+        # Gold "X move:" at normal size, then white typing on the same line
+        sys.stdout.write(f"{_ANSI_GOLD_BOLD}X move: {_ANSI_WHITE}")
         sys.stdout.flush()
 
         while True:
@@ -1307,8 +1297,7 @@ def _read_player_line_windows() -> str:
 
     buf: List[str] = []
     RESET = _ANSI_RESET
-    _write_double_height_line(sys.stdout, f"{_ANSI_GOLD_BOLD}X move:")
-    sys.stdout.write(f"{_ANSI_WHITE}")
+    sys.stdout.write(f"{_ANSI_GOLD_BOLD}X move: {_ANSI_WHITE}")
     sys.stdout.flush()
     while True:
         ch = msvcrt.getwch()
