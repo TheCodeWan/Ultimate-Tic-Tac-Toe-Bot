@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -1484,6 +1484,30 @@ def _emit_chance_chart(
             pass
 
 
+def _require_matplotlib() -> None:
+    """Exit with install instructions if matplotlib is missing."""
+    try:
+        import matplotlib  # noqa: F401
+    except ImportError:
+        # Match whatever launcher the user used (python / python3 / full path)
+        launcher = sys.executable or "python3"
+        print(
+            "This program needs matplotlib (for the end-of-game chance chart).\n"
+            "\n"
+            "It is not installed for this Python. In your terminal, run:\n"
+            "\n"
+            f"  {launcher} -m pip install matplotlib\n"
+            "\n"
+            "Or install everything from this folder:\n"
+            "\n"
+            f"  {launcher} -m pip install -r requirements.txt\n"
+            "\n"
+            "Then start the bot again.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ultimate Tic-Tac-Toe bot (O)")
     parser.add_argument(
@@ -1527,6 +1551,7 @@ def main() -> None:
         help="Skip checking GitHub/git for a newer version on startup",
     )
     args = parser.parse_args()
+    _require_matplotlib()
     play_loop(
         time_limit=args.time,
         seed=args.seed,
