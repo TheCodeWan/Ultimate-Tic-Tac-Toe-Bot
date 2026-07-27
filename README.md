@@ -15,8 +15,8 @@ You also need **matplotlib** (for the end-of-game chart). If it’s missing, the
 ## Quick start
 
 ```bash
-git clone https://github.com/TheCodeWan/ultimate-ttt-bot.git
-cd ultimate-ttt-bot
+git clone https://github.com/TheCodeWan/Ultimate-Tic-Tac-Toe-Bot.git
+cd Ultimate-Tic-Tac-Toe-Bot
 python3 -m pip install -r requirements.txt
 python3 ultimate_ttt_bot.py
 ```
@@ -135,7 +135,7 @@ If you installed with **git clone**:
 Or anytime in a terminal:
 
 ```bash
-cd ultimate-ttt-bot
+cd Ultimate-Tic-Tac-Toe-Bot
 git pull
 ```
 

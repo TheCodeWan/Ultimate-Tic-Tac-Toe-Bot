@@ -33,7 +33,7 @@ __version__ = "1.1.1"
 
 # GitHub repo used for update checks / git pull (private or public)
 GITHUB_OWNER = "TheCodeWan"
-GITHUB_REPO = "ultimate-ttt-bot"
+GITHUB_REPO = "Ultimate-Tic-Tac-Toe-Bot"
 GITHUB_BRANCH = "main"
 
 X, O, EMPTY = 1, -1, 0
