@@ -62,7 +62,7 @@ The big board is made up of **9 small boards**, laid out like this:
 7 8 9
 ```
 
-Each small board also has **9 spots**, numbered the same way.
+Each small board also has **9 cells**, numbered the same way.
 
 Type:
 
@@ -107,7 +107,9 @@ At the **end** of the game:
 
 ---
 
-## Common options
+## Flags
+
+You may optionally add flags at the end of the `python3 ultimate_ttt_bot.py` command  to modify certain settings like so:
 
 ```bash
 python3 ultimate_ttt_bot.py --time 10
