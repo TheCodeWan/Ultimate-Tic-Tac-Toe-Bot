@@ -25,7 +25,12 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
+
+# Hidden input tokens for Ctrl shortcuts (not meant to be typed as normal moves)
+_CMD_UPDATE = "__cmd_update__"
+_CMD_UNDO = "__cmd_undo__"
+_CMD_QUIT = "__cmd_quit__"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -886,7 +891,7 @@ def check_for_updates(quiet: bool = False) -> Optional[bool]:
     remote_src, err = _fetch_remote_bot_source_err()
     if remote_src is None:
         if not quiet:
-            print(
+            emit(
                 f"Update check: could not reach GitHub ({err or 'unknown error'}).",
                 file=sys.stderr,
             )
@@ -895,23 +900,19 @@ def check_for_updates(quiet: bool = False) -> Optional[bool]:
     remote_ver = _parse_version(remote_src)
     if not remote_ver:
         if not quiet:
-            print("Update check: could not read remote version.", file=sys.stderr)
+            emit("Update check: could not read remote version.", file=sys.stderr)
         return None
 
     if _version_key(remote_ver) > _version_key(__version__):
-        print(
+        emit(
             f"Update available: you have v{__version__}, latest is v{remote_ver}.",
             file=sys.stderr,
         )
-        print(
-            "Type  update  or  u  and press Enter to download "
-            "(or Ctrl+U if that shortcut works here).",
-            file=sys.stderr,
-        )
+        emit("Press Ctrl+U to download the update.", file=sys.stderr)
         return True
 
     if not quiet:
-        print(f"Up to date (v{__version__}).", file=sys.stderr)
+        emit(f"Up to date (v{__version__}).", file=sys.stderr)
     return False
 
 
@@ -923,10 +924,13 @@ def apply_update() -> bool:
     If this directory is also a git clone, tries `git pull` afterward for README/etc.
     Restart the program after a successful update.
     """
-    print("Downloading latest bot from GitHub...", flush=True)
+    emit("Downloading latest bot from GitHub...")
     remote_src, err = _fetch_remote_bot_source_err(timeout=60.0)
     if remote_src is None:
-        print(f"Update failed: could not download ({err or 'unknown error'}).", file=sys.stderr)
+        emit(
+            f"Update failed: could not download ({err or 'unknown error'}).",
+            file=sys.stderr,
+        )
         return False
 
     remote_ver = _parse_version(remote_src) or "?"
@@ -948,7 +952,7 @@ def apply_update() -> bool:
             pass
         os.replace(tmp_path, path)
     except Exception as exc:
-        print(f"Update failed while saving file: {exc}", file=sys.stderr)
+        emit(f"Update failed while saving file: {exc}", file=sys.stderr)
         try:
             if os.path.isfile(tmp_path):
                 os.remove(tmp_path)
@@ -956,27 +960,24 @@ def apply_update() -> bool:
             pass
         return False
 
-    print(f"Updated bot script to v{remote_ver}:", flush=True)
-    print(f"  {path}", flush=True)
+    emit(f"Updated bot script to v{remote_ver}:")
+    emit(f"  {path}")
 
     # Optional: if user has a full clone, refresh the rest of the repo too
     if _is_git_checkout():
-        print("Also refreshing git repo files...", flush=True)
+        emit("Also refreshing git repo files...")
         code, out, gerr = _run_git(
             ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
         )
         if code == 0 and out:
-            print(out, flush=True)
+            emit(out)
         elif code != 0:
-            print(
+            emit(
                 f"(git pull skipped/failed: {gerr or out or 'error'} — bot file is still updated.)",
                 file=sys.stderr,
             )
 
-    print(
-        "Please quit and run the script again to use the new version.",
-        flush=True,
-    )
+    emit("Press Ctrl+Q to quit, then run the script again to use the new version.")
     return True
 
 
@@ -1004,31 +1005,46 @@ def _is_git_checkout() -> bool:
     return code == 0 and out == "true"
 
 
-def _setup_ctrl_u_shortcut() -> bool:
-    """
-    Try to bind Ctrl+U to submit the update command.
+def emit(*args, file=None, **kwargs) -> None:
+    """Print a message, then a blank line (extra spacing in the terminal)."""
+    if file is None:
+        file = sys.stdout
+    kwargs.setdefault("flush", True)
+    print(*args, file=file, **kwargs)
+    print(file=file, flush=True)
 
-    Note: many terminals use Ctrl+U to clear the line; this overrides that
-    for this Python process only when readline/libedit allows it.
-    Returns True if a binding was installed.
+
+def _setup_keyboard_shortcuts() -> bool:
+    """
+    Bind Ctrl shortcuts for this Python process via readline/libedit.
+
+    - Ctrl+U → update
+    - Ctrl+B → undo last full turn (your move + bot reply)
+    - Ctrl+Q → quit
+
+    Returns True if at least one binding was installed.
     """
     try:
         import readline  # type: ignore
     except ImportError:
         return False
 
-    # GNU readline and libedit use slightly different bind syntax
-    for binding in (
-        r'"\C-u": "update\n"',
-        r"Control-u: 'update\n'",
-        r'"\C-U": "update\n"',
-    ):
-        try:
-            readline.parse_and_bind(binding)
-            return True
-        except Exception:
-            continue
-    return False
+    # Map each key to a hidden command token + Enter
+    specs = [
+        (_CMD_UPDATE, (r'"\C-u": "{}\n"', r"Control-u: '{}\n'", r'"\C-U": "{}\n"')),
+        (_CMD_UNDO, (r'"\C-b": "{}\n"', r"Control-b: '{}\n'", r'"\C-B": "{}\n"')),
+        (_CMD_QUIT, (r'"\C-q": "{}\n"', r"Control-q: '{}\n'", r'"\C-Q": "{}\n"')),
+    ]
+    any_ok = False
+    for token, patterns in specs:
+        for pat in patterns:
+            try:
+                readline.parse_and_bind(pat.format(token))
+                any_ok = True
+                break
+            except Exception:
+                continue
+    return any_ok
 
 
 def format_pct(p: float) -> str:
@@ -1341,27 +1357,34 @@ def play_loop(
     rng = random.Random(seed)
     state = State.new()
     chance_history: List[Dict[str, float]] = []
+    # Snapshots before each of your turns (for Ctrl+B undo of your move + bot reply)
+    checkpoints: List[Tuple[State, List[Dict[str, float]]]] = []
 
-    print(
+    emit(
         f"Ultimate Tic-Tac-Toe bot v{__version__}  (you = X, bot = O)",
         file=sys.stderr,
     )
-    print("Moves: BOARD-SPACE  e.g. 5-5 for center of center", file=sys.stderr)
-    print("Type quit to exit.  Type update (or u) to download the latest version.", file=sys.stderr)
-    ctrl_u = _setup_ctrl_u_shortcut()
-    if ctrl_u:
-        print("Shortcut: Ctrl+U also runs update (in this program).", file=sys.stderr)
-    print(file=sys.stderr)
+    emit("Moves: BOARD-SPACE  e.g. 5-5 for center of center", file=sys.stderr)
+    emit(
+        "Shortcuts:  Ctrl+U = update   Ctrl+B = undo last turn   Ctrl+Q = quit",
+        file=sys.stderr,
+    )
+    if not _setup_keyboard_shortcuts():
+        emit(
+            "(Keyboard shortcuts unavailable in this terminal — "
+            "try another terminal app if needed.)",
+            file=sys.stderr,
+        )
 
     if check_updates:
         check_for_updates(quiet=False)
-        print(file=sys.stderr)
+        emit("", file=sys.stderr)
 
     def finish(reason: str = "end") -> None:
         if state.is_terminal():
             _announce_end(state)
         elif reason == "quit":
-            print("Game stopped early.", file=sys.stderr)
+            emit("Game stopped early.", file=sys.stderr)
         _emit_chance_chart(chance_history, chart_path, state)
 
     while True:
@@ -1373,21 +1396,32 @@ def play_loop(
             try:
                 raw = input()
             except EOFError:
-                print(file=sys.stderr)
+                emit("", file=sys.stderr)
                 finish("quit")
                 return
-            cmd = raw.strip().lower()
-            # Ctrl+U may arrive as the update line, or rarely as the raw character
-            if cmd in {"q", "quit", "exit"}:
+
+            token = raw.strip()
+            # Ctrl shortcuts insert hidden command tokens
+            if token == _CMD_QUIT or raw == "\x11":  # Ctrl+Q
                 finish("quit")
                 return
-            if cmd in {"u", "update"} or raw == "\x15":
+            if token == _CMD_UPDATE or raw == "\x15":  # Ctrl+U
                 apply_update()
+                continue
+            if token == _CMD_UNDO or raw == "\x02":  # Ctrl+B
+                if not checkpoints:
+                    emit("Nothing to undo.", file=sys.stderr)
+                else:
+                    state, chance_history = checkpoints.pop()
+                    emit(
+                        "Undid your last move and the bot’s reply.",
+                        file=sys.stderr,
+                    )
                 continue
 
             parsed = parse_move(raw)
             if parsed is None:
-                print(
+                emit(
                     "Invalid format. Use BOARD-SPACE with digits 1-9, e.g. 1-2",
                     file=sys.stderr,
                 )
@@ -1395,31 +1429,35 @@ def play_loop(
             b, c = parsed
             legal = state.legal_moves()
             if (b, c) not in legal:
-                print("Illegal move.", file=sys.stderr)
+                emit("Illegal move.", file=sys.stderr)
                 if state.active is not None and not state.local_closed(state.active):
-                    print(
+                    emit(
                         f"You must play in local board {state.active + 1}.",
                         file=sys.stderr,
                     )
                 else:
-                    print("That cell is not available.", file=sys.stderr)
+                    emit("That cell is not available.", file=sys.stderr)
                 continue
+
+            # Save board before this turn (for undo of your move + bot reply)
+            checkpoints.append(
+                (state.clone(), [dict(row) for row in chance_history])
+            )
 
             # Grade the human move by simulated win rate (~MOVE_SCORE_TIME seconds)
             quality, rank, n_legal, best_moves, chose_best = rank_player_move(
                 state, (b, c), rng
             )
-            print(
+            emit(
                 f"Your move score: {quality}/100  "
                 f"(rank {rank} of {n_legal}; 1=worst, {n_legal}=best)",
-                flush=True,
             )
             if not chose_best and best_moves:
                 best_str = ", ".join(format_move(bb, cc) for bb, cc in best_moves)
                 if len(best_moves) == 1:
-                    print(f"Best move would have been: {best_str}", flush=True)
+                    emit(f"Best move would have been: {best_str}")
                 else:
-                    print(f"Best moves would have been: {best_str}", flush=True)
+                    emit(f"Best moves would have been: {best_str}")
 
             state.apply(b, c)
 
@@ -1428,52 +1466,34 @@ def play_loop(
                 g = state.global_winner()
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (you won)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (you won)")
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (bot won)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (bot won)")
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (draw)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (draw)")
                 _record_chances(chance_history, p_win, p_draw, p_loss)
                 finish()
                 return
 
             # Bot move
-            print("Thinking...", flush=True)
+            emit("Thinking...")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            print(f"bot move: {format_move(bot_b, bot_c)}", flush=True)
+            emit(f"Bot move: {format_move(bot_b, bot_c)}")
 
             if state.is_terminal():
                 g = state.global_winner()
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (you won)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (you won)")
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (bot won)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (bot won)")
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
-                    print(
-                        f"Estimated win chance: {format_pct(p_win)}  (draw)",
-                        flush=True,
-                    )
+                    emit(f"Estimated win chance: {format_pct(p_win)}  (draw)")
                 _record_chances(chance_history, p_win, p_draw, p_loss)
                 finish()
                 return
@@ -1482,28 +1502,27 @@ def play_loop(
             p_win, p_draw, p_loss = estimate_x_win_chance(
                 state, rng, n_sims=win_sims
             )
-            print(
+            emit(
                 f"Estimated win chance: {format_pct(p_win)}  "
-                f"(draw {format_pct(p_draw)}, O win {format_pct(p_loss)})",
-                flush=True,
+                f"(draw {format_pct(p_draw)}, O win {format_pct(p_loss)})"
             )
             _record_chances(chance_history, p_win, p_draw, p_loss)
         else:
             # Should not happen in normal loop (bot moves immediately after X)
-            print("Thinking...", flush=True)
+            emit("Thinking...")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
-            print(f"bot move: {format_move(bot_b, bot_c)}", flush=True)
+            emit(f"Bot move: {format_move(bot_b, bot_c)}")
 
 
 def _announce_end(state: State) -> None:
     g = state.global_winner()
     if g == X:
-        print("Game over: X wins.", file=sys.stderr)
+        emit("Game over: X wins.", file=sys.stderr)
     elif g == O:
-        print("Game over: O wins.", file=sys.stderr)
+        emit("Game over: O wins.", file=sys.stderr)
     else:
-        print("Game over: draw.", file=sys.stderr)
+        emit("Game over: draw.", file=sys.stderr)
 
 
 def _emit_chance_chart(
@@ -1512,7 +1531,7 @@ def _emit_chance_chart(
     state: State,
 ) -> None:
     if not history:
-        print("No chance samples to chart.", file=sys.stderr)
+        emit("No chance samples to chart.", file=sys.stderr)
         return
 
     g = state.global_winner() if state.is_terminal() else None
@@ -1529,9 +1548,9 @@ def _emit_chance_chart(
     paths = save_chance_chart(
         history, chart_path, title=title, subtitle=subtitle
     )
-    print("Chance chart saved:", file=sys.stderr)
+    emit("Chance chart saved:", file=sys.stderr)
     for p in paths:
-        print(f"  {os.path.abspath(p)}", file=sys.stderr)
+        emit(f"  {os.path.abspath(p)}", file=sys.stderr)
 
     # Prefer PNG in Preview (not Safari SVG)
     preferred = None
@@ -1546,7 +1565,7 @@ def _emit_chance_chart(
                 break
     if preferred and sys.platform == "darwin":
         try:
-            print("Opening chance chart in Preview in 5 seconds...", flush=True)
+            emit("Opening chance chart in Preview in 5 seconds...")
             time.sleep(5.0)
             if preferred.endswith(".png"):
                 # Force Preview for the image
