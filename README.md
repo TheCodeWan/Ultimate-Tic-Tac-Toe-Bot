@@ -54,7 +54,7 @@ If that board is already finished, they may play **anywhere** still open.
 
 ## How to type a move
 
-The big board is **9 small boards**, laid out like this:
+The big board is made up of **9 small boards**, laid out like this:
 
 ```text
 1 2 3
