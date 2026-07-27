@@ -12,8 +12,6 @@ Move format: BOARD-SPACE  (e.g. 1-2)
     7 8 9
 """
 
-__version__ = "1.0.0"
-
 from __future__ import annotations
 
 import argparse
@@ -21,14 +19,22 @@ import math
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+__version__ = "1.1.0"
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+# GitHub repo used for update checks / git pull (private or public)
+GITHUB_OWNER = "TheCodeWan"
+GITHUB_REPO = "ultimate-ttt-bot"
+GITHUB_BRANCH = "main"
 
 X, O, EMPTY = 1, -1, 0
 PLAYER_NAMES = {X: "X", O: "O"}
@@ -804,6 +810,154 @@ def format_move(board: int, cell: int) -> str:
     return f"{board + 1}-{cell + 1}"
 
 
+def _script_dir() -> str:
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _run_git(args: List[str], timeout: float = 15.0) -> Tuple[int, str, str]:
+    """Run a git command in the script directory. Returns (code, stdout, stderr)."""
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=_script_dir(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+    except FileNotFoundError:
+        return 127, "", "git not found"
+    except subprocess.TimeoutExpired:
+        return 124, "", "git timed out"
+    except Exception as exc:
+        return 1, "", str(exc)
+
+
+def _is_git_checkout() -> bool:
+    code, out, _ = _run_git(["rev-parse", "--is-inside-work-tree"], timeout=5.0)
+    return code == 0 and out == "true"
+
+
+def check_for_updates(quiet: bool = False) -> Optional[bool]:
+    """
+    Check whether origin/main is ahead of the local checkout.
+
+    Returns True if an update is available, False if up to date, None if unknown.
+    """
+    if not _is_git_checkout():
+        if not quiet:
+            print(
+                "Update check: not a git checkout "
+                f"(clone https://github.com/{GITHUB_OWNER}/{GITHUB_REPO} to enable).",
+                file=sys.stderr,
+            )
+        return None
+
+    code, _, err = _run_git(
+        ["fetch", "--quiet", "origin", GITHUB_BRANCH], timeout=20.0
+    )
+    if code != 0:
+        if not quiet:
+            print(
+                f"Update check: could not reach origin ({err or 'fetch failed'}).",
+                file=sys.stderr,
+            )
+        return None
+
+    code, local, _ = _run_git(["rev-parse", "HEAD"], timeout=5.0)
+    if code != 0 or not local:
+        return None
+    code, remote, _ = _run_git(
+        ["rev-parse", f"origin/{GITHUB_BRANCH}"], timeout=5.0
+    )
+    if code != 0 or not remote:
+        return None
+
+    if local == remote:
+        if not quiet:
+            print(f"Up to date (v{__version__}).", file=sys.stderr)
+        return False
+
+    # How many commits behind?
+    code, count, _ = _run_git(
+        ["rev-list", "--count", f"HEAD..origin/{GITHUB_BRANCH}"], timeout=5.0
+    )
+    behind = count if code == 0 and count else "?"
+    print(
+        f"Update available: local is {behind} commit(s) behind "
+        f"origin/{GITHUB_BRANCH}.",
+        file=sys.stderr,
+    )
+    print(
+        "Type  update  or  u  and press Enter to download "
+        "(or press Ctrl+U if your terminal supports that shortcut).",
+        file=sys.stderr,
+    )
+    return True
+
+
+def apply_update() -> bool:
+    """
+    Pull latest from origin. Returns True if files changed / pull succeeded.
+    Caller should restart the program after a successful update.
+    """
+    if not _is_git_checkout():
+        print(
+            "Cannot auto-update: this folder is not a git clone.\n"
+            f"  git clone https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}.git",
+            file=sys.stderr,
+        )
+        return False
+
+    print("Downloading update (git pull)...", flush=True)
+    code, out, err = _run_git(
+        ["pull", "--ff-only", "origin", GITHUB_BRANCH], timeout=60.0
+    )
+    if code != 0:
+        print(f"Update failed: {err or out or 'git pull error'}", file=sys.stderr)
+        print(
+            "Tip: commit or stash local changes, or re-clone the repo.",
+            file=sys.stderr,
+        )
+        return False
+
+    if out:
+        print(out, flush=True)
+    print(
+        "Update installed. Please quit and run the script again "
+        f"(python3 ultimate_ttt_bot.py) to use the new version.",
+        flush=True,
+    )
+    return True
+
+
+def _setup_ctrl_u_shortcut() -> bool:
+    """
+    Try to bind Ctrl+U to submit the update command.
+
+    Note: many terminals use Ctrl+U to clear the line; this overrides that
+    for this Python process only when readline/libedit allows it.
+    Returns True if a binding was installed.
+    """
+    try:
+        import readline  # type: ignore
+    except ImportError:
+        return False
+
+    # GNU readline and libedit use slightly different bind syntax
+    for binding in (
+        r'"\C-u": "update\n"',
+        r"Control-u: 'update\n'",
+        r'"\C-U": "update\n"',
+    ):
+        try:
+            readline.parse_and_bind(binding)
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def format_pct(p: float) -> str:
     """
     Format a probability in [0, 1] for display.
@@ -1109,15 +1263,26 @@ def play_loop(
     win_sims: int = 5000,
     max_sims: Optional[int] = None,
     chart_path: str = "utt_chances",
+    check_updates: bool = True,
 ) -> None:
     rng = random.Random(seed)
     state = State.new()
     chance_history: List[Dict[str, float]] = []
 
-    print("Ultimate Tic-Tac-Toe bot (you = X, bot = O)", file=sys.stderr)
+    print(
+        f"Ultimate Tic-Tac-Toe bot v{__version__}  (you = X, bot = O)",
+        file=sys.stderr,
+    )
     print("Moves: BOARD-SPACE  e.g. 5-5 for center of center", file=sys.stderr)
-    print("Type quit to exit.", file=sys.stderr)
+    print("Type quit to exit.  Type update (or u) to download the latest version.", file=sys.stderr)
+    ctrl_u = _setup_ctrl_u_shortcut()
+    if ctrl_u:
+        print("Shortcut: Ctrl+U also runs update (in this program).", file=sys.stderr)
     print(file=sys.stderr)
+
+    if check_updates:
+        check_for_updates(quiet=False)
+        print(file=sys.stderr)
 
     def finish(reason: str = "end") -> None:
         if state.is_terminal():
@@ -1138,9 +1303,14 @@ def play_loop(
                 print(file=sys.stderr)
                 finish("quit")
                 return
-            if raw.strip().lower() in {"q", "quit", "exit"}:
+            cmd = raw.strip().lower()
+            # Ctrl+U may arrive as the update line, or rarely as the raw character
+            if cmd in {"q", "quit", "exit"}:
                 finish("quit")
                 return
+            if cmd in {"u", "update"} or raw == "\x15":
+                apply_update()
+                continue
 
             parsed = parse_move(raw)
             if parsed is None:
@@ -1317,6 +1487,11 @@ def _emit_chance_chart(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ultimate Tic-Tac-Toe bot (O)")
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ultimate_ttt_bot {__version__}",
+    )
+    parser.add_argument(
         "--time",
         type=float,
         default=2.0,
@@ -1346,6 +1521,11 @@ def main() -> None:
         default="utt_chances",
         help="Output path base for end-of-game chance chart (default: utt_chances)",
     )
+    parser.add_argument(
+        "--no-update-check",
+        action="store_true",
+        help="Skip checking GitHub/git for a newer version on startup",
+    )
     args = parser.parse_args()
     play_loop(
         time_limit=args.time,
@@ -1353,6 +1533,7 @@ def main() -> None:
         win_sims=args.win_sims,
         max_sims=(args.sims if args.sims > 0 else None),
         chart_path=args.chart,
+        check_updates=not args.no_update_check,
     )
 
 
