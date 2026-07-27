@@ -1,12 +1,13 @@
 # Ultimate Tic-Tac-Toe Bot
 
-Play **Ultimate Tic-Tac-Toe** in your terminal against a computer opponent.
+Play **Ultimate Tic-Tac-Toe** in your terminal against a computer.
 
 - **You** are **X** (you go first)  
 - The **bot** is **O**  
 - You type moves; the bot answers  
 
-Works on **Mac, Windows, or Linux** in any normal terminal that has **Python** (and **git** if you want easy updates).
+Works on **Mac, Windows, or Linux** in a normal terminal that has **Python**.  
+**Git** is optional (only if you want `git clone` / `git pull`).
 
 You also need **matplotlib** (for the end-of-game chart). If it’s missing, the bot **stops and tells you exactly what to type** to install it.
 
@@ -23,7 +24,7 @@ python3 ultimate_ttt_bot.py
 
 On Windows, if `python3` doesn’t work, try `python` instead.
 
-If you forget matplotlib, you’ll see something like:
+If matplotlib is missing, you’ll see something like:
 
 ```text
 python3 -m pip install matplotlib
@@ -54,7 +55,13 @@ If that board is already finished, they may play **anywhere** still open.
 
 ## How to type a move
 
-The big board is made up of **9 small boards**, laid out like this:
+You’ll see a prompt like:
+
+```text
+X move: 
+```
+
+The big board is **9 small boards**, numbered like this:
 
 ```text
 1 2 3
@@ -62,7 +69,7 @@ The big board is made up of **9 small boards**, laid out like this:
 7 8 9
 ```
 
-Each small board also has **9 cells**, numbered the same way.
+Each small board has **9 cells**, numbered the same way.
 
 Type:
 
@@ -73,18 +80,26 @@ BOARD-SPOT
 Examples:
 
 - `5-5` — middle of the middle board  
-- `1-2` — top-left board, top-middle spot  
-- `9-9` — bottom-right board, bottom-right spot  
+- `1-2` — top-left board, top-middle cell  
+- `9-9` — bottom-right board, bottom-right cell  
 
 Then press **Enter**.
 
-Other commands while playing:
+---
 
-| You type | What happens |
+## Keyboard shortcuts
+
+These work **while the `X move:` prompt is waiting** (the bot reads keys directly, like a small terminal app):
+
+| Shortcut | What it does |
 |----------|----------------|
-| `quit` | Stop the game |
-| `update` or `u` | Download the latest version from git |
-| **Ctrl+U** | Same as `update` (when the shortcut works in your terminal) |
+| **Ctrl+U** | Download the latest bot script from GitHub |
+| **Ctrl+B** | Undo your last move **and** the bot’s reply |
+| **Ctrl+Q** | Quit |
+
+There are no typed commands like `quit` or `update` — use the shortcuts.
+
+Run the bot in a normal terminal (Terminal.app, iTerm, Windows Terminal, etc.). Some apps that wrap the terminal may steal Ctrl keys.
 
 ---
 
@@ -92,49 +107,53 @@ Other commands while playing:
 
 After **your** move:
 
-- **Score out of 100** — how good that move was compared to your other legal options right then  
+- **Score out of 100** — how good that move was vs your other legal options right then (about 5 seconds of grading)  
 - Sometimes **“Best move would have been…”** if there was a better choice  
 
 After the **bot** moves:
 
-- **Win chance** — rough odds you’ll still win (plus draw / bot win). Tiny odds show as `<0.1%`.  
+- **`Bot move: 5-3`** (example)  
+- **Win chance** — rough odds you’ll still win (plus draw / bot win). Values under 0.1% show as `<0.1%`.  
 
 At the **end** of the game:
 
-- A **chart** image of how those chances changed (needs matplotlib).  
-  - Mac: opens in Preview after a few seconds  
-  - Windows/Linux: open `utt_chances.png` yourself  
+- A **chart** of how those chances changed (`utt_chances.png`)  
+  - **Mac:** opens in Preview after a few seconds  
+  - **Windows / Linux:** open the PNG yourself  
+
+**Move score** = quality of this choice.  
+**Win chance** = how the whole game looks.  
+You can play a great move and still see win chance drop if the position is tough or the bot answers well.
 
 ---
 
-## Flags
-
-You may optionally add flags at the end of the `python3 ultimate_ttt_bot.py` command  to modify certain settings like so:
+## Optional flags
 
 ```bash
 python3 ultimate_ttt_bot.py --time 10
 ```
 
-| Option | Meaning |
-|--------|---------|
-| `--time` | Bot thinks up to 10 seconds per move |
-| `--win-sims` | Faster (less precise) win-chance estimates |
-| `--seed` | Same “randomness” every run (for testing) |
-| `--no-update-check` | Don’t check for updates when starting |
+| Flag | Meaning |
+|------|---------|
+| `--time 10` | Bot may think up to 10 seconds per move |
+| `--win-sims 1000` | Fewer sims → faster, noisier win-chance estimates |
+| `--seed 42` | Same randomness every run (for testing) |
+| `--no-update-check` | Don’t check GitHub for updates on startup |
+| `--chart NAME` | Base name for the chart files |
 | `--version` | Print version number |
 
 ---
 
 ## Updates
 
-You do **not** need a full git clone just to update the bot.
+You **don’t** need a full git clone just to update the bot script.
 
-1. Each launch **checks GitHub** for a newer version of `ultimate_ttt_bot.py`.  
-2. If one exists, the bot tells you.  
-3. Type **`update`** (or **`u`**, or try **Ctrl+U**) to download the new script over the old one.  
-4. **Quit and run the script again** so the new code loads.
+1. On startup the bot checks GitHub for a newer version.  
+2. If one exists, it tells you.  
+3. Press **Ctrl+U** to download the new `ultimate_ttt_bot.py` over the old one.  
+4. Press **Ctrl+Q**, then run the script again so the new code loads.
 
-That works for a single downloaded `.py` file **or** a full repo folder (needs internet).
+Needs internet. Works for a single `.py` file or a full repo folder.
 
 If you use git for the whole project:
 
@@ -143,13 +162,11 @@ cd Ultimate-Tic-Tac-Toe-Bot
 git pull
 ```
 
-**Ctrl+U note:** In many terminals Ctrl+U normally clears the line. This program tries to reuse it for “update,” but if that doesn’t work, just type `update` and press Enter.
-
 ---
 
 ## Optional tools
 
-- `utt_opening_search.py` — slow tool that scores all 81 opening moves (for curiosity, not needed to play)
+- `utt_opening_search.py` — slow tool that scores all 81 opening moves (curiosity only; not needed to play)
 
 ---
 
