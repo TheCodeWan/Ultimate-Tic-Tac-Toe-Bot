@@ -1755,7 +1755,7 @@ def play_loop(
                 finish()
                 return
 
-            # Bot move
+            # O's reply
             emit("Thinking...", style="dim")
             bot_b, bot_c = choose_move(state, time_limit, rng, max_sims=max_sims)
             state.apply(bot_b, bot_c)
