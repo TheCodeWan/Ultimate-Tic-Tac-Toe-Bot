@@ -25,9 +25,9 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
-# Hidden input tokens for Ctrl shortcuts (not meant to be typed as normal moves)
+# Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
 _CMD_UNDO = "__cmd_undo__"
 _CMD_QUIT = "__cmd_quit__"
@@ -1014,37 +1014,159 @@ def emit(*args, file=None, **kwargs) -> None:
     print(file=file, flush=True)
 
 
-def _setup_keyboard_shortcuts() -> bool:
+def _read_player_line_unix() -> str:
     """
-    Bind Ctrl shortcuts for this Python process via readline/libedit.
+    Read one line of input in near-raw terminal mode (macOS / Linux).
 
-    - Ctrl+U → update
-    - Ctrl+B → undo last full turn (your move + bot reply)
-    - Ctrl+Q → quit
+    Same idea as full-screen TUIs (Grok Build, kilo editor, etc.): disable
+    canonical/line editing so Ctrl+letter arrives as a single byte we can
+    handle immediately, instead of being eaten by the shell/readline.
 
-    Returns True if at least one binding was installed.
+      Ctrl+U (\\x15) → update
+      Ctrl+B (\\x02) → undo
+      Ctrl+Q (\\x11) → quit
+      Enter          → submit the typed move
+      Backspace      → edit the buffer
     """
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    buf: List[str] = []
     try:
-        import readline  # type: ignore
-    except ImportError:
-        return False
+        # cbreak: char-at-a-time, no line buffering; keep Ctrl+C as interrupt
+        tty.setcbreak(fd)
+        # Also disable software flow control so Ctrl+Q is not XON/XOFF
+        new = termios.tcgetattr(fd)
+        new[0] = new[0] & ~(termios.IXON | termios.IXOFF | termios.IXANY)
+        # Disable ISIG if we want Ctrl+C raw too — keep ISIG so Ctrl+C still works
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
-    # Map each key to a hidden command token + Enter
-    specs = [
-        (_CMD_UPDATE, (r'"\C-u": "{}\n"', r"Control-u: '{}\n'", r'"\C-U": "{}\n"')),
-        (_CMD_UNDO, (r'"\C-b": "{}\n"', r"Control-b: '{}\n'", r'"\C-B": "{}\n"')),
-        (_CMD_QUIT, (r'"\C-q": "{}\n"', r"Control-q: '{}\n'", r'"\C-Q": "{}\n"')),
-    ]
-    any_ok = False
-    for token, patterns in specs:
-        for pat in patterns:
-            try:
-                readline.parse_and_bind(pat.format(token))
-                any_ok = True
-                break
-            except Exception:
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+
+        while True:
+            ch = sys.stdin.read(1)
+            if not ch:
+                return _CMD_QUIT
+
+            code = ord(ch)
+
+            # Hotkeys (control characters)
+            if code == 0x15:  # Ctrl+U
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _CMD_UPDATE
+            if code == 0x02:  # Ctrl+B
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _CMD_UNDO
+            if code == 0x11:  # Ctrl+Q
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _CMD_QUIT
+            if code == 0x03:  # Ctrl+C
+                raise KeyboardInterrupt
+            if code == 0x04 and not buf:  # Ctrl+D on empty line → quit
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _CMD_QUIT
+
+            # Enter
+            if ch in ("\n", "\r"):
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return "".join(buf)
+
+            # Backspace / Delete
+            if code in (0x7F, 0x08):
+                if buf:
+                    buf.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
                 continue
-    return any_ok
+
+            # Ignore other control chars
+            if code < 32:
+                continue
+
+            # Printable
+            buf.append(ch)
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _read_player_line_windows() -> str:
+    """Character-at-a-time input on Windows (msvcrt)."""
+    import msvcrt  # type: ignore
+
+    buf: List[str] = []
+    sys.stdout.write("> ")
+    sys.stdout.flush()
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ("\x00", "\xe0"):
+            # Function/arrow key prefix — discard the next code
+            msvcrt.getwch()
+            continue
+        code = ord(ch)
+        if code == 0x15:  # Ctrl+U
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return _CMD_UPDATE
+        if code == 0x02:  # Ctrl+B
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return _CMD_UNDO
+        if code == 0x11:  # Ctrl+Q
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return _CMD_QUIT
+        if code == 0x03:
+            raise KeyboardInterrupt
+        if ch in ("\r", "\n"):
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return "".join(buf)
+        if code in (0x08, 0x7F):
+            if buf:
+                buf.pop()
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+            continue
+        if code < 32:
+            continue
+        buf.append(ch)
+        sys.stdout.write(ch)
+        sys.stdout.flush()
+
+
+def read_player_line() -> str:
+    """
+    Read a move or hotkey. Prefer raw terminal mode so Ctrl shortcuts work
+    (readline bindings are unreliable / fight the shell).
+    """
+    if not sys.stdin.isatty():
+        # Piped input / non-interactive: fall back to normal line read
+        line = sys.stdin.readline()
+        if line == "":
+            return _CMD_QUIT
+        return line.rstrip("\n\r")
+
+    if sys.platform == "win32":
+        try:
+            return _read_player_line_windows()
+        except Exception:
+            return input().rstrip("\n\r")
+
+    try:
+        return _read_player_line_unix()
+    except Exception:
+        # Last resort
+        return input().rstrip("\n\r")
 
 
 def format_pct(p: float) -> str:
@@ -1365,16 +1487,11 @@ def play_loop(
         file=sys.stderr,
     )
     emit("Moves: BOARD-SPACE  e.g. 5-5 for center of center", file=sys.stderr)
+    emit("Shortcuts (work while typing a move):", file=sys.stderr)
     emit(
-        "Shortcuts:  Ctrl+U = update   Ctrl+B = undo last turn   Ctrl+Q = quit",
+        "  Ctrl+U = update    Ctrl+B = undo last turn    Ctrl+Q = quit",
         file=sys.stderr,
     )
-    if not _setup_keyboard_shortcuts():
-        emit(
-            "(Keyboard shortcuts unavailable in this terminal — "
-            "try another terminal app if needed.)",
-            file=sys.stderr,
-        )
 
     if check_updates:
         check_for_updates(quiet=False)
@@ -1394,21 +1511,25 @@ def play_loop(
 
         if state.to_move == X:
             try:
-                raw = input()
+                raw = read_player_line()
             except EOFError:
+                emit("", file=sys.stderr)
+                finish("quit")
+                return
+            except KeyboardInterrupt:
                 emit("", file=sys.stderr)
                 finish("quit")
                 return
 
             token = raw.strip()
-            # Ctrl shortcuts insert hidden command tokens
-            if token == _CMD_QUIT or raw == "\x11":  # Ctrl+Q
+            # Hotkeys from raw terminal reader
+            if token == _CMD_QUIT:
                 finish("quit")
                 return
-            if token == _CMD_UPDATE or raw == "\x15":  # Ctrl+U
+            if token == _CMD_UPDATE:
                 apply_update()
                 continue
-            if token == _CMD_UNDO or raw == "\x02":  # Ctrl+B
+            if token == _CMD_UNDO:
                 if not checkpoints:
                     emit("Nothing to undo.", file=sys.stderr)
                 else:
