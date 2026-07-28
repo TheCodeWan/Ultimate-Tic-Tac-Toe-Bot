@@ -1,4 +1,4 @@
-# Ultimate Tic-Tac-Toe Bot
+  # Ultimate Tic-Tac-Toe Bot
 
 Play **Ultimate Tic-Tac-Toe** in your terminal against a computer.
 
@@ -32,8 +32,7 @@ If matplotlib is missing, you’ll see something like:
 ```text
 python3 -m pip install matplotlib
 ```
-
-(Use the command the bot prints — it matches the Python you’re running.)
+ run that to install matplotlib.
 
 ---
 
@@ -99,8 +98,6 @@ These work **while the `X move:` prompt is waiting** (the bot reads keys directl
 | **Ctrl+U** | Download the latest bot script from GitHub |
 | **Ctrl+B** | Undo your last move **and** the bot’s reply |
 | **Ctrl+Q** | Quit |
-
-There are no typed commands like `quit` or `update` — use the shortcuts.
 
 Run the bot in a normal terminal (Terminal.app, iTerm, Windows Terminal, etc.). Some apps that wrap the terminal may steal Ctrl keys.
 
