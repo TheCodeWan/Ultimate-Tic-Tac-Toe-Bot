@@ -1171,7 +1171,7 @@ def emit_title(title: str, subtitle: str = "", file=None) -> None:
 _ANSI_RESET = "\033[0m"
 _ANSI_GOLD_BOLD = "\033[1;38;2;255;193;7m"  # bold #ffc107 (X move + all former yellows)
 _ANSI_WHITE = "\033[22;38;2;255;255;255m"  # plain white (SGR 22 clears bold) for typed/move coords
-_ANSI_O_PROMPT = "[1;38;2;178;0;254m"  # bold #B200FE for "O move:" label
+_ANSI_O_PROMPT = "\033[1;38;2;178;0;254m"  # bold #B200FE for "O move:" label
 
 
 def emit_move_line(
