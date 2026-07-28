@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.15"
+__version__ = "1.5.17"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1381,6 +1381,23 @@ def format_pct(p: float) -> str:
     return f"{100.0 * p:.1f}%"
 
 
+
+def win_chance_style(p: float) -> str:
+    """
+    Rich style for estimated P(X wins), by percentage:
+
+      70–100 → green  (#07cc00)
+      40–69  → gold   (#ffc107, same as X move)
+      0–39   → red    (#e60808)
+    """
+    pct = 100.0 * float(p)
+    if pct >= 70.0:
+        return "bold #07cc00"
+    if pct >= 40.0:
+        return "bold #ffc107"
+    return "bold #e60808"
+
+
 def _record_chances(
     history: List[Dict[str, float]],
     p_win: float,
@@ -1789,9 +1806,9 @@ def play_loop(
             if not chose_best and best_moves:
                 best_str = ", ".join(format_move(bb, cc) for bb, cc in best_moves)
                 if len(best_moves) == 1:
-                    emit(f"Best move would have been: [bold #2FEDFF]{best_str}[/]")
+                    emit(f"Best move would have been: [bold #00D1FE]{best_str}[/]")
                 else:
-                    emit(f"Best moves would have been: [bold #2FEDFF]{best_str}[/]")
+                    emit(f"Best moves would have been: [bold #00D1FE]{best_str}[/]")
 
             state.apply(b, c)
 
@@ -1800,13 +1817,19 @@ def play_loop(
                 g = state.global_winner()
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (you won)")
+                    emit(
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (you won)"
+                    )
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (bot won)")
+                    emit(
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (bot won)"
+                    )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
-                    emit(f"Estimated win chance: {format_pct(p_win)}  (draw)")
+                    emit(
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (draw)"
+                    )
                 _record_chances(chance_history, p_win, p_draw, p_loss)
                 finish()
                 return
@@ -1827,17 +1850,17 @@ def play_loop(
                 if g == X:
                     p_win, p_draw, p_loss = 1.0, 0.0, 0.0
                     emit(
-                        f"Estimated win chance: [bold #07cc00]{format_pct(p_win)}[/]  (you won)"
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (you won)"
                     )
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
                     emit(
-                        f"Estimated win chance: [bold #B200FE]{format_pct(p_win)}[/]  (O won)"
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (O won)"
                     )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
                     emit(
-                        f"Estimated win chance: [bold]{format_pct(p_win)}[/]  (draw)"
+                        f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  (draw)"
                     )
                 _record_chances(chance_history, p_win, p_draw, p_loss)
                 finish()
@@ -1848,7 +1871,7 @@ def play_loop(
                 state, rng, n_sims=win_sims
             )
             emit(
-                f"Estimated win chance: [bold #00D1FE]{format_pct(p_win)}[/]  "
+                f"Estimated win chance: [{win_chance_style(p_win)}]{format_pct(p_win)}[/]  "
                 f"(draw {format_pct(p_draw)}, O win {format_pct(p_loss)})"
             )
             _record_chances(chance_history, p_win, p_draw, p_loss)
