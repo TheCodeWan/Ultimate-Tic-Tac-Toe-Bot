@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "1.5.13"
+__version__ = "1.5.14"
 
 # Returned by read_player_line() for hotkeys (not move text)
 _CMD_UPDATE = "__cmd_update__"
@@ -1027,7 +1027,7 @@ def apply_update() -> bool:
             emit(
                 f"git fetch failed ({err or 'error'}). Trying zip download instead...",
                 file=sys.stderr,
-                style="yellow",
+                style="#ffc107",
             )
         else:
             code, out, err = _run_git(
@@ -1046,7 +1046,7 @@ def apply_update() -> bool:
             emit(
                 f"git pull failed ({err or out or 'error'}). Trying zip download instead...",
                 file=sys.stderr,
-                style="yellow",
+                style="#ffc107",
             )
 
     emit("Downloading full repository from GitHub...", style="cyan")
@@ -1169,9 +1169,9 @@ def emit_title(title: str, subtitle: str = "", file=None) -> None:
 # ANSI helpers for move lines (raw mode).
 # Move prompts and coords stay normal height (title alone uses double-height).
 _ANSI_RESET = "\033[0m"
-_ANSI_GOLD_BOLD = "\033[1;38;2;255;193;7m"  # bold gold for "X move:" label
+_ANSI_GOLD_BOLD = "\033[1;38;2;255;193;7m"  # bold #ffc107 (X move + all former yellows)
 _ANSI_WHITE = "\033[22;38;2;255;255;255m"  # plain white (SGR 22 clears bold) for typed/move coords
-_ANSI_O_PROMPT = "\033[1;38;2;208;0;247m"  # bold #d000f7 for "O move:" label
+_ANSI_O_PROMPT = "\033[1;38;2;108;6;255m"  # bold #6c06ff for "O move:" label
 
 
 def emit_move_line(
@@ -1194,7 +1194,7 @@ def emit_move_line(
         )
         file.flush()
     except Exception:
-        emit(f"[bold #d000f7]{label}[/] [white]{move}[/]", file=file)
+        emit(f"[bold #6c06ff]{label}[/] [white]{move}[/]", file=file)
 
 
 def _read_player_line_unix() -> str:
@@ -1758,13 +1758,13 @@ def play_loop(
                     emit(
                         f"You must play in local board {state.active + 1}.",
                         file=sys.stderr,
-                        style="yellow",
+                        style="#ffc107",
                     )
                 else:
                     emit(
                         "That cell is not available.",
                         file=sys.stderr,
-                        style="yellow",
+                        style="#ffc107",
                     )
                 continue
 
@@ -1780,7 +1780,7 @@ def play_loop(
             score_style = (
                 "bold #07cc00"
                 if quality >= 80
-                else ("yellow" if quality >= 50 else "bold #e60808")
+                else ("bold #ffc107" if quality >= 50 else "bold #e60808")
             )
             emit(
                 f"Your move score: [{score_style}]{quality}/100[/]  "
@@ -1832,7 +1832,7 @@ def play_loop(
                 elif g == O:
                     p_win, p_draw, p_loss = 0.0, 0.0, 1.0
                     emit(
-                        f"Estimated win chance: [bold #d000f7]{format_pct(p_win)}[/]  (O won)"
+                        f"Estimated win chance: [bold #6c06ff]{format_pct(p_win)}[/]  (O won)"
                     )
                 else:
                     p_win, p_draw, p_loss = 0.0, 1.0, 0.0
